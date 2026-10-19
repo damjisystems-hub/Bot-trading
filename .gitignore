@@ -1,0 +1,6 @@
+# Precios y resultados de las pruebas: archivos grandes que se generan otra vez
+datos/
+resultados/
+
+__pycache__/
+*.pyc
