@@ -1,6 +1,6 @@
 # Estrategia CRT: las reglas del bot
 
-Las reglas salen de once vídeos del autor de la estrategia (CRT, «Candle Range Theory») y de lo que decidió el equipo
+Las reglas salen de doce vídeos del autor de la estrategia (CRT, «Candle Range Theory») y de lo que decidió el equipo
 el 19-10-2026. El flujo dibujado está en la página https://claude.ai/artifact/MW8eiwC99U2ekSHkywnrfz (privada).
 
 Si cambia una regla, se cambia aquí, en el código y en su prueba automática.
@@ -23,8 +23,9 @@ Si cambia una regla, se cambia aquí, en el código y en su prueba automática.
 
 - **A qué hora empiezan vuestras velas de 4H.** En el quinto vídeo son las de la 1, las 5 y las 9 de Nueva York (el día
   empieza a las 17:00, como en MT5). En el vídeo de los 150.000 $ la vela de 4H de la apertura es «la de las 6»: es lo
-  que sale en el gráfico de futuros de TradingView, cuyo día empieza a las 18:00 (velas de las 2, las 6 y las 10). El
-  bot usa las de las 17:00 y el laboratorio prueba también las de las 18:00 (`HoraInicio4H` en MT5).
+  que sale en el gráfico de futuros de TradingView, cuyo día empieza a las 18:00 (velas de las 2, las 6 y las 10). En
+  el vídeo de los 6.000 $, en cambio, una vela de 4H abre a las 5:00, como en el horario del bot. El bot usa las de las
+  17:00 y el laboratorio prueba también las de las 18:00 (`HoraInicio4H` en MT5).
 - **Las fechas de los casos del examen** que no la tienen, y confirmar las deducidas (ver `casos/casos.csv`).
 
 ## Horario
@@ -126,6 +127,8 @@ en la cabeza.
   racha de stops que es normal con el acierto que hay y si una operación influye en la siguiente.
 - El stop no se mueve más allá de donde se invalida la idea, ni se cierra antes de tiempo por miedo: solo lo que diga una
   regla aprobada.
+- Cuando el objetivo se cumple, se cierra: alargarlo es avaricia. En el vídeo de los 6.000 $ el autor lo cuenta de una
+  venta suya: habría sido TP, quiso apurar más y acabó casi sin ganar. El bot nunca alarga su TP.
 
 **Lo que hace el equipo (cuaderno, `cuaderno/`):** apuntar cada operación propia con si se siguió el plan, la regla que
 se saltó y la emoción. El informe del cuaderno califica cada día por el proceso, avisa de las ganadas saltándose el plan
@@ -152,7 +155,8 @@ Son propuestas; se ajustan con la prueba con el pasado:
 Son decisiones que el autor toma a ojo y cambian de un día a otro. Las que se pueden medir están en el laboratorio como
 reglas candidatas.
 
-- Operar contra el sesgo con un objetivo corto cuando 8H, 4H y 1H se alinean al revés.
+- Operar contra el sesgo con un objetivo corto cuando 8H, 4H y 1H se alinean al revés (como la venta del vídeo de los
+  6.000 $ tras un rango bajista de 4H).
 - Rangos de 8H o de 2H.
 - El «failure swing»: barrer un máximo o mínimo anterior que no es el de la vela de antes.
 - Entrar con poco y promediar en la entrada ideal.
@@ -162,7 +166,8 @@ reglas candidatas.
 - Cerrar antes de tiempo por noticias o por ser viernes por la tarde.
 - Bajar el riesgo después de un stop.
 - Cerrar por partes en cada objetivo.
-- Mirar mercados relacionados: el índice del dólar o el S&P 500 (la «SMT» del vídeo de los stops).
+- Mirar mercados relacionados: el índice del dólar o el S&P 500 (la «SMT» de los vídeos de los stops y de los 6.000 $:
+  salir cuando el S&P ya ha tomado su objetivo y el NASDAQ no).
 - La gestión de cuentas de fondeo del autor (copiar operaciones en varias cuentas, ir más agresivo en los exámenes).
 
 ## Cómo aprende el bot (y quién cambia las reglas)
@@ -198,11 +203,15 @@ reglas candidatas.
   - solo situaciones sin banderas rojas;
   - dejar el día al perder 1 R, y un día de pausa tras 3 stops seguidos (vídeo de psicología);
   - rango diario aunque cierre un poco por fuera (vídeo de la única vela);
-  - velas de 4H del gráfico de futuros (empiezan a las 18:00).
+  - velas de 4H del gráfico de futuros (empiezan a las 18:00);
+  - diario: también vale tras una vela diaria expansiva a favor, con el objetivo en su máximo («una vela expansiva
+    alcista: es muy probable que vayamos a tomar el máximo del día anterior», vídeo de los 6.000 $);
+  - salir en la «zona de peligro»: ganando, con máximos nuevos en 4H y en 1H y un barrido en contra en M15 (la
+    salida por tiempo del vídeo de los 6.000 $, que salió justo en el máximo).
 
   Una candidata solo se propone si mejora la media de R por operación en los dos periodos con al menos 30
   operaciones en cada uno.
-- **Examen:** `casos/casos.csv` guarda situaciones reales con lo que el bot tenía que hacer: las de los vídeos (33,
+- **Examen:** `casos/casos.csv` guarda situaciones reales con lo que el bot tenía que hacer: las de los vídeos (35,
   buenas y malas) y las que enseñe el equipo. Un caso suspendido es una pista, no una orden: se mira por qué y, si hace
   falta, se prueba una regla en el laboratorio.
 - **Cuaderno:** las operaciones del equipo, para la parte de psicología (ver «Disciplina»).

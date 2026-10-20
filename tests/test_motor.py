@@ -217,6 +217,54 @@ class SalidaPor1H(unittest.TestCase):
         self.assertAlmostEqual(op.r, -1.2 / 7)
 
 
+class ZonaDePeligro(unittest.TestCase):
+    """Vídeo de los 6.000 $: ganando, con máximos nuevos en 4H y en 1H y un barrido en contra en M15, se sale."""
+
+    def _barras(self):
+        # Compra a 104 (stop 97). A las 10:30 el precio está en 109: la vela de 4H de las 9 ya supera el máximo
+        # de la de las 5 (105) y la de 1H de las 10 el de la de las 9 (106). La vela de M15 de las 10:30 sube a
+        # 110,5 y vuelve a cerrar dentro de la anterior (108,8): barrido bajista. Después cae a 95.
+        barras = camino(HASTA_LAS_9 + ORDER_BLOCK_9_30 + [("2025-03-04 10:00", 106), ("2025-03-04 10:30", 109)])
+        barras.append(Vela(ny("2025-03-04 10:30"), 109, 110.5, 108.6, 108.8))
+        barras += camino([("2025-03-04 10:45", 108.8), ("2025-03-04 11:30", 95), ("2025-03-04 12:00", 96)])
+        for k, b in enumerate(barras):
+            b.i_inicio = b.i_fin = k
+        return barras
+
+    def test_sin_la_regla_acaba_en_stop(self):
+        self.assertEqual(probar(self._barras(), SIN_COSTES, SOLO_4H).operaciones[0].resultado, "SL")
+
+    def test_sale_en_la_zona_de_peligro(self):
+        op = probar(self._barras(), SIN_COSTES, replace(SOLO_4H, salida_peligro=True)).operaciones[0]
+        self.assertEqual((op.resultado, op.hora_salida), ("Zona de peligro", ny("2025-03-04 10:45")))
+        self.assertAlmostEqual(op.r, 4.8 / 7)
+
+
+class VelaDiariaExpansiva(unittest.TestCase):
+    """Vídeo de los 6.000 $: tras una vela diaria expansiva a favor, el objetivo es su máximo y no hace falta
+    esperar a otro rango diario."""
+
+    # El lunes va de 80 a 90 y el martes cierra en 130, por encima del máximo del lunes. El miércoles no barre
+    # el mínimo del martes, así que no hay rango diario, pero sí el rango de 4H y el order block de siempre.
+    PUNTOS = [("2025-03-02 18:00", 80), ("2025-03-03 17:00", 90), ("2025-03-04 17:00", 130)] + [
+        (t.replace("2025-03-04", "2025-03-05").replace("2025-03-03", "2025-03-04"), p) for t, p in HASTA_LAS_9 + ORDER_BLOCK_9_30
+    ] + [("2025-03-05 11:00", 125), ("2025-03-05 13:00", 125)]
+
+    def _res(self, diario):
+        return probar(camino(self.PUNTOS), SIN_COSTES, Ajustes(sesgo_fijo=+1, diario=diario))
+
+    def test_con_el_diario_obligatorio_no_entra(self):
+        self.assertEqual(self._res("verde").descartadas["el diario no está a favor"], 1)
+
+    def test_tras_la_vela_expansiva_entra(self):
+        ops = self._res("expansiva").operaciones
+        self.assertEqual([(o.hora_entrada, o.resultado) for o in ops], [(ny("2025-03-05 09:30"), "TP")])
+
+    def test_sin_vela_expansiva_no_vale(self):
+        res = probar(camino(SUBE), SIN_COSTES, Ajustes(sesgo_fijo=+1, diario="expansiva"))
+        self.assertEqual(res.descartadas["el diario no está a favor"], 1)
+
+
 class TpEnElObjetivoDe4H(unittest.TestCase):
     def test_el_tp_va_al_objetivo_del_rango(self):
         # La vela 1 sube hasta 120: el objetivo del rango de 4H está a 16 puntos de la entrada (2,3 R).

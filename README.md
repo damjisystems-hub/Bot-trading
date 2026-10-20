@@ -13,7 +13,7 @@ Bot de trading con la estrategia CRT («Candle Range Theory») para el NASDAQ, e
 
 **Estado (20-10-2026):**
 - Las reglas, la memoria, el laboratorio, el examen y el cuaderno están programados y comprobados con pruebas
-  automáticas. Ya tienen lo de los once vídeos: banderas rojas, 23 reglas candidatas, 33 situaciones en el examen y la
+  automáticas. Ya tienen lo de los doce vídeos: banderas rojas, 25 reglas candidatas, 35 situaciones en el examen y la
   disciplina del vídeo de psicología.
 - **Falta la prueba con datos reales del pasado**, porque faltan los datos (ver «Datos»).
 - El bot de MT5 está escrito, pero no se ha podido compilar aquí: hay que compilarlo en MetaEditor (ver `mt5/LEEME.md`).

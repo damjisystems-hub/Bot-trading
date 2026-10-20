@@ -9,7 +9,7 @@
 - **Os frena** (vídeo de psicología): con el tope de pérdida del día entre todos los mercados, deja de avisar y os
   dice que cerréis el gráfico.
 
-**Estado (20-10-2026, versión 1.10):** está escrito, pero no se ha podido compilar en la sesión de Claude. Puede que al
+**Estado (20-10-2026, versión 1.11):** está escrito, pero no se ha podido compilar en la sesión de Claude. Puede que al
 compilarlo salga algún error. Si pasa, copiad el texto del error y pasádselo a Claude (ver la sección 8).
 
 **Por defecto solo avisa.** Nunca opera en una cuenta real, salvo que lo activéis a propósito.
@@ -56,7 +56,8 @@ Un aviso es así:
 
 - **Nota:** A, sin banderas rojas; B, con una; C, con dos o más. Las banderas son lo que el autor no quiere ver al entrar
   (ver `ESTRATEGIA.md`). No impiden entrar: sirven para que veáis el riesgo y para que el bot aprenda si importan.
-- Cuando la operación termina, llega otro aviso con el resultado (TP, SL, salida por 1H o cierre del viernes) en R.
+- Cuando la operación termina, llega otro aviso con el resultado (TP, SL, salida por 1H, zona de peligro o cierre del
+  viernes) en R.
 - Si se llega al tope de pérdida del día, llega un aviso (solo uno, aunque el bot esté en los tres gráficos) y ese día ya
   no avisa de más entradas.
 
@@ -92,6 +93,8 @@ Un aviso es así:
 | SoloSinBanderas | Solo situaciones con nota A. | No |
 | PausaTrasStops | Tras tantos stops seguidos, el resto del día y el siguiente sin entrar. 0 = no. | 0 |
 | ToleranciaDiario | Un rango diario que cierra un poco por fuera (hasta esa parte de la vela 1) sigue valiendo, como hace el autor en el gráfico de futuros. 0 = no. | 0 |
+| DiarioValeExpansiva | Tras una vela diaria expansiva a favor (cierra por fuera de la anterior) también vale, con el objetivo en su máximo (en ventas, su mínimo). | No |
+| SalidaPeligro | Sale en la «zona de peligro»: ganando, con máximos nuevos en 4H y en 1H (en ventas, mínimos) y una vela de M15 que barre la anterior y cierra dentro. | No |
 | **Datos y memoria** | | |
 | DesfaseServidorNY | Horas que el reloj del servidor va por delante de Nueva York (ver abajo). | 7 |
 | DiferencialFijoPuntos | 0 = usa el diferencial real del bróker. Con un número, usa siempre ese (sirve para comparar con el Python). | 0 |

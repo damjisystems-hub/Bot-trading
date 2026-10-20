@@ -24,7 +24,7 @@
 //
 // Si cambias una regla aquí, cámbiala también en crt/ (y al revés): los dos tienen que decidir igual.
 #property copyright   "Damji Systems"
-#property version     "1.10"
+#property version     "1.11"
 #property description "Bot CRT: avisa de las entradas de la estrategia CRT y apunta la memoria."
 #property description "Por defecto solo avisa. No opera en cuentas reales."
 
@@ -83,6 +83,8 @@ input Exigencia Exigir1H                = EXIGIR_NADA;  // Exigir el 1H
 input Exigencia Exigir3H                = EXIGIR_NADA;  // Exigir el 3H
 input bool     SoloSinBanderas          = false;        // Solo situaciones sin banderas rojas (nota A)
 input int      PausaTrasStops           = 0;            // Un día de pausa tras tantos stops seguidos (0 = no)
+input bool     DiarioValeExpansiva      = false;        // Diario: también vale tras una vela diaria expansiva a favor
+input bool     SalidaPeligro            = false;        // Salir en la zona de peligro (máximos nuevos de 4H y 1H y barrido en M15)
 input double   ToleranciaDiario         = 0;            // Rango diario aunque cierre hasta esta parte de la vela 1 por fuera (0 = no; p. ej. 0.1)
 
 input group "Datos y memoria"
@@ -150,6 +152,7 @@ input long     NumeroMagico             = 20261020;     // Número de las órden
 #define RES_BE            3
 #define RES_SEMANAL       4
 #define RES_1H            5
+#define RES_PELIGRO       6
 
 // Banderas rojas (crt/motor.py: BANDERAS), en el mismo orden. Se guardan como bits.
 #define BAN_DIARIO_EN_CONTRA   1
@@ -359,6 +362,7 @@ public:
    bool              DameAnticipo(const int dir, const double precio, Setup &s);
    bool              Tomando(const int dir);
    void              UltimoEvento(Evento &e) { e = ev[ultimo]; }
+   bool              UltimaEsRuptura(const int dir) { return ultimo >= 0 && ev[ultimo].tipo == TIPO_RUPTURA && ev[ultimo].direccion == dir; }
    int               ColorSemaforo(const int dir, const double precio);
    int               SemaforoCerrado(const int dir);
    int               DireccionUltimo(void);
@@ -857,6 +861,8 @@ string TextoResultado(const int r)
          return "Cierre semanal";
       case RES_1H:
          return "Salida por 1H";
+      case RES_PELIGRO:
+         return "Zona de peligro";
      }
    return "";
   }
@@ -1602,7 +1608,7 @@ void Terminar(Senal &s)
       Print(t);
       Notificar(t);
      }
-   if(s.tomada && s.ticket > 0 && (s.resultado == RES_SEMANAL || s.resultado == RES_1H))
+   if(s.tomada && s.ticket > 0 && (s.resultado == RES_SEMANAL || s.resultado == RES_1H || s.resultado == RES_PELIGRO))
       CerrarReal(s);
   }
 
@@ -1642,16 +1648,33 @@ void QuitarFantasma(const int k)
    ArrayResize(g_fantasmas, n - 1);
   }
 
+// Regla candidata de la «zona de peligro» (crt/motor.py: _peligro): ganando, si la vela de 4H y la de 1H
+// en curso hacen máximos nuevos (en ventas, mínimos) y una vela de M15 barre la anterior y vuelve a
+// cerrar dentro, se sale al cierre de esa vela. Devuelve true si la operación se cierra.
+bool EnZonaDePeligro(Senal &s, const Vela &b)
+  {
+   int d = s.direccion;
+   if(!SalidaPeligro || !g_hay_anterior || !(g_h4.Tomando(d) && g_h1.Tomando(d)))
+      return false;
+   double precio = PrecioDeSalida(s, b.cierre);
+   Evento m15;
+   bool hay = Evaluar(g_anterior, b, m15, 0);
+   if((precio - s.entrada) * d <= 0 || !hay || m15.tipo != TIPO_RANGO || m15.direccion != -d)
+      return false;
+   Salir(s, precio, RES_PELIGRO, b.inicio + SEG_M15);
+   return true;
+  }
+
 void RevisarSalidas(const Vela &b)
   {
-   if(g_hay_real && RevisarSalida(g_real, b))
+   if(g_hay_real && (RevisarSalida(g_real, b) || EnZonaDePeligro(g_real, b)))
      {
       Terminar(g_real);
       CuentaCerrada(g_real);
       g_hay_real = false;
      }
    for(int k = ArraySize(g_fantasmas) - 1; k >= 0; k--)
-      if(RevisarSalida(g_fantasmas[k], b))
+      if(RevisarSalida(g_fantasmas[k], b) || EnZonaDePeligro(g_fantasmas[k], b))
         {
          Terminar(g_fantasmas[k]);
          QuitarFantasma(k);
@@ -1840,8 +1863,10 @@ void Mirar(const Vela &b, const int d)
    int color_diario = hay_diario ? 1 : g_d1.SemaforoCerrado(d);
    double objetivo = hay_diario ? sd.objetivo : VACIO;
    bool diario_vale = hay_diario;
-   if(!hay_diario && DiarioBastaNoRojo && g_d1.NCerradas() > 0 && color_diario != -1)
+   bool vale_sin_rango = (DiarioBastaNoRojo && color_diario != -1) || (DiarioValeExpansiva && g_d1.UltimaEsRuptura(d));
+   if(!hay_diario && g_d1.NCerradas() > 0 && vale_sin_rango)
      {
+      // Tras una vela diaria expansiva, «es muy probable que vayamos a tomar el máximo del día anterior».
       Vela previa;
       g_d1.UltimaCerrada(previa);
       objetivo = (d > 0) ? previa.maximo : previa.minimo;

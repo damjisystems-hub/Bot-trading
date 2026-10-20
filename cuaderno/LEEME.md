@@ -16,7 +16,7 @@ Abrid `operaciones.csv` con Excel o Numbers y añadid una fila por operación:
 | cuenta | demo, propia o fondeo. | demo |
 | siguio_el_plan | si o no. Sed sinceros: es lo que más enseña. | no |
 | regla_rota | Si no seguisteis el plan, qué regla os saltasteis. Vacío si lo seguisteis. | entré antes de la apertura |
-| emocion | Cómo estabais: calma, dudas, miedo, prisa, venganza, euforia, cansancio… | prisa |
+| emocion | Cómo estabais: calma, dudas, miedo, prisa, venganza, euforia, avaricia (alargar un objetivo ya cumplido), cansancio… | prisa |
 | resultado | TP, SL, BE o a mano. | SL |
 | r | El resultado en R: 2 es un TP a 1 a 2; -1, un stop; 0, la entrada. | -1 |
 | nota | Lo que queráis recordar. | el 1H iba en contra |

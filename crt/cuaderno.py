@@ -12,7 +12,7 @@ Columnas:
   cuenta          demo, propia o fondeo
   siguio_el_plan  si o no
   regla_rota      qué regla se saltó (vacío si se siguió el plan)
-  emocion         cómo estabais: calma, dudas, miedo, prisa, venganza, euforia, cansancio…
+  emocion         cómo estabais: calma, dudas, miedo, prisa, venganza, euforia, avaricia, cansancio…
   resultado       TP, SL, BE o a mano
   r               resultado en R: 2, -1, 0, 0,5…
   nota            lo que queráis
@@ -158,10 +158,11 @@ def _psicologia(apuntes: list[Apunte]) -> list[str]:
             f"de las veces; el resto del tiempo, el {_pct(sum(a.plan for a in resto) / len(resto))}. "
             "Si baja mucho después de perder, hay operaciones de venganza."
         )
-    venganza = [a for a in apuntes if a.emocion in ("venganza", "euforia")]
-    if venganza:
+    trampas = [a for a in apuntes if a.emocion in ("venganza", "euforia", "avaricia")]
+    if trampas:
         lineas.append(
-            f"- Con venganza o euforia (las trampas de las rachas): {len(venganza)} operaciones, {_r(sum(a.r for a in venganza))}."
+            f"- Con venganza, euforia o avaricia: {len(trampas)} operaciones, {_r(sum(a.r for a in trampas))}. La avaricia es "
+            "alargar un objetivo ya cumplido («pequé de avaricia», vídeo de los 6.000 $)."
         )
     peor = racha = 0
     for a in apuntes:

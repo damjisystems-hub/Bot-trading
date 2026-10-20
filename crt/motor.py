@@ -14,7 +14,8 @@ En cada barra, por este orden:
   1. Si la barra empieza otra semana sin que la anterior cerrara (hueco en los datos), se cierra lo
      abierto donde se quedó el precio, y se cierran las velas que había.
   2. Se mira si algún rango ha llegado a su objetivo y se suma la barra a las velas en curso.
-  3. Las operaciones abiertas (la real y las fantasma): ¿tocan el stop o el TP?
+  3. Las operaciones abiertas (la real y las fantasma): ¿tocan el stop o el TP? Con la regla candidata
+     de la zona de peligro, también pueden salir al cierre de la barra.
   4. Se cierran las velas que terminan con esta barra; pueden formar rangos nuevos. Con la regla
      candidata de salida por 1H, un rango de 1H en contra cierra la operación (o lleva el stop a la
      entrada). El viernes a las 17:00 se cierra lo que quede abierto.
@@ -31,7 +32,7 @@ from datetime import date, datetime, time, timedelta
 from .entrada import APERTURA_NY, es_order_block, hora_permitida, sesion
 from .marcos import Marco, Setup
 from .mercados import Mercado
-from .rangos import semaforo
+from .rangos import evaluar, semaforo
 from .velas import QUINCE_MIN, Vela, dia_de_trading
 
 STOP_MINIMO_EN_DIFERENCIALES = 3  # un stop más corto que esto no es realista: se lo comería el diferencial
@@ -63,7 +64,8 @@ DECISIONES = (
 
 # Cómo termina una operación.
 SALIDA_1H = "Salida por 1H"
-RESULTADOS = ("TP", "SL", "BE", "Cierre semanal", SALIDA_1H)
+ZONA_DE_PELIGRO = "Zona de peligro"
+RESULTADOS = ("TP", "SL", "BE", "Cierre semanal", SALIDA_1H, ZONA_DE_PELIGRO)
 
 # Banderas rojas: lo que el autor no quiere ver al entrar (vídeos de los stops, de los 150.000 $ y de la
 # única vela). No impiden entrar: se apuntan para ver si las que las llevan pierden más.
@@ -89,7 +91,7 @@ class Ajustes:
     hasta: time = time(13, 0)
     solo_tras_apertura: bool = False
     solo_londres: bool = False
-    diario: str = "verde"  # "verde": hace falta un rango diario a favor; "no_rojo": basta con que no vaya en contra; "ignorar": solo para pruebas
+    diario: str = "verde"  # "verde": hace falta un rango diario a favor; "no_rojo": basta con que no vaya en contra; "expansiva": también vale tras una vela diaria expansiva a favor; "ignorar": solo para pruebas
     comprobar_objetivo_diario: bool = True  # no entrar si el TP queda más allá del objetivo del diario
     max_operaciones_dia: int = 2  # por mercado
     perdida_max_dia_r: float | None = 3.0  # al perder tanto en un día (en R) no se entra más ese día; en MT5 suma los tres mercados, aquí solo este
@@ -100,6 +102,7 @@ class Ajustes:
     escenarios: tuple | None = None  # escenarios permitidos (None: todos)
     sin_noticias: bool = False  # no entrar los días con noticias fuertes
     salida_1h: str | None = None  # si se forma un rango de 1H en contra: "salir" o "entrada" (stop a la entrada si va ganando; si no, salir)
+    salida_peligro: bool = False  # salir en la zona de peligro: ganando, 4H y 1H en máximos nuevos y un barrido en contra en M15
     tp_objetivo_4h: bool = False  # TP en el objetivo del rango de 4H en vez de a «ratio» veces el riesgo
     exigir_1h: str | None = None  # el 1H tiene que estar "verde" (rango a favor) o "no_rojo" (no en contra)
     exigir_3h: str | None = None  # lo mismo con el 3H
@@ -124,7 +127,7 @@ class Operacion:
     stop_en_entrada: bool = False
     hora_salida: datetime | None = None
     salida: float | None = None
-    resultado: str = ""  # TP, SL, BE (stop en la entrada), «Cierre semanal» o «Salida por 1H»
+    resultado: str = ""  # TP, SL, BE (stop en la entrada), «Cierre semanal», «Salida por 1H» o «Zona de peligro»
     r: float = 0.0  # resultado en R: +2 es un TP a 1 a 2, -1 un stop
     mfe_r: float = 0.0  # lo más que llegó a ir a favor, en R
     mae_r: float = 0.0  # lo más que llegó a ir en contra, en R
@@ -253,9 +256,13 @@ class _Recorrido:
             m.sumar(barra)
 
         # 3.
-        if self.abierta is not None and _revisar_salida(self.abierta, barra, self.mercado, self.ajustes):
+        if self.abierta is not None and (
+            _revisar_salida(self.abierta, barra, self.mercado, self.ajustes) or self._peligro(self.abierta, barra, anterior)
+        ):
             self._cerrada(self.abierta)
-        self.fantasmas = [op for op in self.fantasmas if not _revisar_salida(op, barra, self.mercado, self.ajustes)]
+        self.fantasmas = [
+            op for op in self.fantasmas if not (_revisar_salida(op, barra, self.mercado, self.ajustes) or self._peligro(op, barra, anterior))
+        ]
 
         # 4.
         hora = barra.inicio + QUINCE_MIN
@@ -311,7 +318,13 @@ class _Recorrido:
         color_diario = "verde" if diario is not None else semaforo(self.d1.ultimo, d)
         objetivo = diario.objetivo if diario is not None else None
         diario_vale = a.diario == "ignorar" or diario is not None
-        if diario is None and a.diario == "no_rojo" and self.d1.cerradas and color_diario != "rojo":
+        ultimo = self.d1.ultimo
+        expansiva = ultimo is not None and ultimo.tipo == "ruptura" and ultimo.direccion == d
+        if diario is None and self.d1.cerradas and (
+            (a.diario == "no_rojo" and color_diario != "rojo") or (a.diario == "expansiva" and expansiva)
+        ):
+            # «Una vela expansiva alcista: es muy probable que vayamos a tomar el máximo del día anterior»
+            # (vídeo de los 6.000 $): el objetivo es el extremo de la vela diaria anterior.
             previa = self.d1.cerradas[-1]
             objetivo = previa.maximo if d > 0 else previa.minimo
             diario_vale = True
@@ -447,6 +460,21 @@ class _Recorrido:
         if self.abierta is not None and nuevo.direccion == -self.abierta.direccion and self._salida_1h(self.abierta, hora, cierre):
             self._cerrada(self.abierta)
         self.fantasmas = [op for op in self.fantasmas if not (nuevo.direccion == -op.direccion and self._salida_1h(op, hora, cierre))]
+
+    def _peligro(self, op: Operacion, barra: Vela, anterior: Vela | None) -> bool:
+        """Regla candidata de la «zona de peligro» (vídeo de los 6.000 $): ganando, si la vela de 4H y la de
+        1H en curso hacen máximos nuevos (en ventas, mínimos) y una vela de M15 barre la anterior y vuelve a
+        cerrar dentro, se sale al cierre de esa vela: «la probabilidad de que el precio se gire tras hacer
+        nuevos altos va aumentando». Devuelve True si la operación se cierra."""
+        d = op.direccion
+        if not self.ajustes.salida_peligro or anterior is None or not (self.h4.tomando(d) and self.h1.tomando(d)):
+            return False
+        precio = _precio_de_salida(op, barra.cierre, self.mercado)
+        m15 = evaluar(anterior, barra, "M15")
+        if (precio - op.entrada) * d <= 0 or m15 is None or m15.tipo != "rango" or m15.direccion != -d:
+            return False
+        _salir(op, barra.inicio + QUINCE_MIN, precio, ZONA_DE_PELIGRO)
+        return True
 
     def _salida_1h(self, op: Operacion, hora: datetime, cierre: float) -> bool:
         """Devuelve True si la operación se cierra."""
