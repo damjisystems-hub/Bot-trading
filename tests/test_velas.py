@@ -21,6 +21,26 @@ class HorarioDeLasVelas(unittest.TestCase):
             self.assertEqual(clave_y_fin("H4", ny(ultima_barra))[0], clave)
             self.assertEqual(fin, ny(ultima_barra) + (ny("2025-01-01 00:15") - ny("2025-01-01 00:00")))
 
+    def test_con_el_horario_de_futuros_las_velas_de_4h_empiezan_a_las_18_22_2_6_10_y_14(self):
+        for inicio, ultima_barra in (
+            ("2025-03-03 18:00", "2025-03-03 21:45"),
+            ("2025-03-03 22:00", "2025-03-04 01:45"),
+            ("2025-03-04 02:00", "2025-03-04 05:45"),
+            ("2025-03-04 06:00", "2025-03-04 09:45"),
+            ("2025-03-04 10:00", "2025-03-04 13:45"),
+        ):
+            clave, fin = clave_y_fin("H4", ny(inicio), inicio_4h=18)
+            self.assertEqual(clave_y_fin("H4", ny(ultima_barra), inicio_4h=18)[0], clave)
+            self.assertEqual(fin, ny(ultima_barra) + (ny("2025-01-01 00:15") - ny("2025-01-01 00:00")))
+        # la vela de la apertura es «la de las 6», como en el vídeo de los 150.000 $
+        self.assertEqual(clave_y_fin("H4", ny("2025-03-04 09:30"), inicio_4h=18)[1], ny("2025-03-04 10:00"))
+
+    def test_las_velas_de_3h_empiezan_a_las_17_20_23_2_5_8_11_y_14(self):
+        fines = [clave_y_fin("H3", ny(f"2025-03-04 {h:02d}:00"))[1].hour for h in (2, 5, 8, 11, 14)]
+        self.assertEqual(fines, [5, 8, 11, 14, 17])
+        self.assertEqual(clave_y_fin("H3", ny("2025-03-03 23:00"))[1], ny("2025-03-04 02:00"))
+        self.assertEqual(clave_y_fin("H3", ny("2025-03-04 09:30"))[1], ny("2025-03-04 11:00"))  # «la de 3 horas de las 8»
+
     def test_la_vela_de_4h_de_las_9_no_incluye_las_8_45(self):
         self.assertNotEqual(clave_y_fin("H4", ny("2025-03-04 08:45"))[0], clave_y_fin("H4", ny("2025-03-04 09:00"))[0])
 

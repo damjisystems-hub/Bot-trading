@@ -94,6 +94,6 @@ def texto(res: Resultado) -> str:
 def linea_comparacion(nombre: str, res: Resultado) -> str:
     e = estadisticas(res.operaciones)
     return (
-        f"  {nombre:<40}{e['n']:>5} op. · acierto {_pct(e['acierto']):>5} · {_r(e['total']):>9} · "
+        f"  {nombre:<55}{e['n']:>5} op. · acierto {_pct(e['acierto']):>5} · {_r(e['total']):>9} · "
         f"media {_r(e['media']):>7} · peor caída {_r(-e['caida']):>8}"
     )

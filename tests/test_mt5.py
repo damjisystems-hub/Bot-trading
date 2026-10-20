@@ -1,4 +1,5 @@
-"""El bot de MT5 y el Python tienen que escribir la misma memoria: mismas columnas y mismos motivos."""
+"""El bot de MT5 y el Python tienen que escribir la misma memoria: mismas columnas, mismos motivos,
+mismos resultados y mismas banderas rojas."""
 
 import os
 import re
@@ -14,16 +15,24 @@ def _fuente() -> str:
         return f.read()
 
 
+def _textos_de(funcion: str) -> set:
+    cuerpo = re.search(rf"string {funcion}\(const int \w+\)(.*?)\n  }}", _fuente(), re.S)[1]
+    return set(re.findall(r'return "([^"]+)";', cuerpo))
+
+
 class MismaMemoria(unittest.TestCase):
     def test_mismas_columnas(self):
         cabecera = re.search(r'#define CABECERA_MEMORIA\s+"([^"]+)"', _fuente())[1]
         self.assertEqual(cabecera.split(","), memoria.COLUMNAS)
 
     def test_mismos_motivos(self):
-        cuerpo = re.search(r"string TextoDecision\(const int d\)(.*?)\n  }", _fuente(), re.S)[1]
-        en_mt5 = set(re.findall(r'return "([^"]+)";', cuerpo))
-        en_python = {v for k, v in vars(motor).items() if k.isupper() and isinstance(v, str) and k != "__doc__"}
-        self.assertEqual(en_mt5, en_python)
+        self.assertEqual(_textos_de("TextoDecision"), set(motor.DECISIONES))
+
+    def test_mismos_resultados(self):
+        self.assertEqual(_textos_de("TextoResultado"), set(motor.RESULTADOS))
+
+    def test_mismas_banderas(self):
+        self.assertEqual(_textos_de("TextoBandera"), set(motor.BANDERAS))
 
     def test_el_archivo_lleva_bom_para_que_metaeditor_lea_los_acentos(self):
         with open(RUTA_EA, "rb") as f:

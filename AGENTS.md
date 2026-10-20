@@ -11,8 +11,11 @@ Guía común para cualquier IA que trabaje en este repositorio. `CLAUDE.md` solo
     mercado, franja en hora de Nueva York y lo que tenía que hacer;
   - un caso suspendido o una idea nueva se prueban en el laboratorio (`aprender.py`) y la regla solo cambia si el
     equipo la aprueba.
-- **La memoria del bot de MT5 (`mt5/`) tiene las mismas columnas y los mismos motivos que `crt/memoria.py` y
-  `crt/motor.py`:** si cambias uno, cambia el otro.
+- **La memoria del bot de MT5 (`mt5/`) tiene las mismas columnas, motivos, resultados y banderas rojas que
+  `crt/memoria.py` y `crt/motor.py` (`DECISIONES`, `RESULTADOS` y `BANDERAS`):** si cambias uno, cambia el otro. Lo
+  comprueba `tests/test_mt5.py`.
+- **Psicología:** las operaciones que hace el equipo a mano van en `cuaderno/operaciones.csv` (informe con
+  `python3 cuaderno.py`). Si el dueño cuenta una operación suya, apúntala allí con si siguió el plan y la emoción.
 - **Nada de dinero real** ni de órdenes en cuentas reales sin permiso explícito del dueño. El orden es demo, cuenta
   propia y después fondeo.
 - **Resultados honestos:**

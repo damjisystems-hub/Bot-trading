@@ -66,20 +66,28 @@ def examinar(caso: Caso, res: Resultado) -> tuple[str, list[str]]:
     }[caso.esperado]
 
     explicacion = []
+    senal_de = {id(s.operacion): s for s in res.senales if s.operacion is not None}
     for o in entradas:
-        explicacion.append(
+        linea = (
             f"{'Compró' if o.direccion > 0 else 'Vendió'} a las {o.hora_entrada:%H:%M} del {o.hora_entrada:%d-%m} "
             f"({o.sesion.lower()}, escenario {o.escenario}): {o.resultado or 'abierta'} {o.r:+.1f} R".replace(".", ",")
         )
+        s = senal_de.get(id(o))
+        if s is not None:
+            linea += f" · nota {s.nota}" + (f" ({', '.join(s.banderas)})" if s.banderas else "")
+        explicacion.append(linea)
     for s in res.senales:
         if caso.desde <= s.hora <= caso.hasta and s.decision != "entrada":
             explicacion.append(f"A las {s.hora:%H:%M} del {s.hora:%d-%m} no {'compró' if s.direccion > 0 else 'vendió'}: {s.decision}.")
     foto = next((f for f in res.fotos if f.hora >= caso.desde), None)
     if foto is not None and foto.hora <= caso.hasta:
-        explicacion.append(
+        linea = (
             f"A las {foto.hora:%H:%M} el sesgo era de {NOMBRE_SESGO[foto.sesgo]}; diario: compras {foto.diario[1]}, "
-            f"ventas {foto.diario[-1]}; 4H: compras {foto.h4[1]}, ventas {foto.h4[-1]}."
+            f"ventas {foto.diario[-1]}; 4H: compras {foto.h4[1]}, ventas {foto.h4[-1]}"
         )
+        if foto.h1:
+            linea += f"; 1H: compras {foto.h1[1]}, ventas {foto.h1[-1]}"
+        explicacion.append(linea + ".")
     if not entradas and not any(caso.desde <= s.hora <= caso.hasta for s in res.senales):
         explicacion.append("No hubo ningún order block con el 4H a favor en esa franja.")
     return ("bien" if bien else "mal"), explicacion

@@ -27,6 +27,18 @@ CANDIDATAS = (
     ("Sin el escenario 3", {"escenarios": ("1", "2", "otro")}),
     ("Como mucho 1 operación al día", {"max_operaciones_dia": 1}),
     ("No operar los días de noticias fuertes", {"sin_noticias": True}),
+    # De los vídeos de los stops, de los 150.000 $, de la única vela y de psicología:
+    ("Salir si se forma un rango de 1H en contra", {"salida_1h": "salir"}),
+    ("Stop a la entrada si se forma un rango de 1H en contra", {"salida_1h": "entrada"}),
+    ("TP en el objetivo del rango de 4H", {"tp_objetivo_4h": True}),
+    ("Exigir el 1H a favor", {"exigir_1h": "verde"}),
+    ("No entrar con el 1H en contra", {"exigir_1h": "no_rojo"}),
+    ("Exigir el 3H a favor", {"exigir_3h": "verde"}),
+    ("Solo situaciones sin banderas rojas", {"sin_banderas": True}),
+    ("Dejar el día al perder 1 R (un stop)", {"perdida_max_dia_r": 1.0}),
+    ("Un día de pausa tras 3 stops seguidos", {"pausa_tras_stops": 3}),
+    ("Diario: rango aunque cierre un poco fuera", {"tolerancia_diario": 0.1}),
+    ("Velas de 4H de futuros (empiezan a las 18:00)", {"inicio_4h": 18}),
 )
 
 

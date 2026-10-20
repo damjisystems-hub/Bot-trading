@@ -26,6 +26,8 @@ class Memoria(unittest.TestCase):
         fila = memoria.filas(res)[0]
         self.assertEqual((fila["direccion"], fila["decision"], fila["tomada"], fila["resultado"], fila["r"]), ("compra", "entrada", "si", "TP", "2.00"))
         self.assertEqual(list(fila), memoria.COLUMNAS)
+        self.assertEqual((fila["h3"], fila["h1"], fila["nota"]), ("rojo", "ambar", "C"))
+        self.assertIn("justo antes de la apertura", fila["banderas"].split(" | "))
 
     def test_la_senal_descartada_se_sigue_como_fantasma(self):
         # Con el diario obligatorio no entra, pero apunta por qué y qué habría pasado.
@@ -100,6 +102,26 @@ class InformeDeAprendizaje(unittest.TestCase):
         self.assertIn("el diario no está a favor", texto)
         self.assertIn("Lo que enseña la memoria", texto)
 
+    def test_banderas_y_psicologia(self):
+        texto = aprendizaje.informe(memoria.filas(probar(camino(SUBE_AL_TP), SIN_COSTES, SOLO_4H)))
+        self.assertIn("Por bandera roja", texto)
+        self.assertIn("el 3H va en contra", texto)
+        self.assertIn("Psicología", texto)
+        self.assertIn("Peor racha: 0 stops seguidos", texto)
+
+    def test_la_racha_normal_de_stops(self):
+        # Con un 35 % de acierto, en 200 operaciones es normal ver unos 10 stops seguidos.
+        self.assertEqual(aprendizaje.racha_normal(200, 0.35), 10)
+        self.assertEqual(aprendizaje.racha_normal(100, 0.5), 6)
+        self.assertIsNone(aprendizaje.racha_normal(5, 0.5))
+
+    def test_lee_memorias_sin_las_columnas_nuevas(self):
+        filas = memoria.filas(probar(camino(SUBE_AL_TP), SIN_COSTES, SOLO_4H))
+        for f in filas:
+            for c in ("h3", "h1", "banderas", "nota"):
+                del f[c]
+        self.assertIn("Lo que enseña la memoria", aprendizaje.informe(filas))
+
 
 class Examen(unittest.TestCase):
     def _casos(self, filas: str):
@@ -120,6 +142,7 @@ class Examen(unittest.TestCase):
         estados = [casos.examinar(c, res)[0] for c in lista]
         self.assertEqual(estados, ["bien", "mal", "bien", "falta la fecha", "sin datos"])
         self.assertIn("Compró a las 09:30", casos.examinar(lista[0], res)[1][0])
+        self.assertIn("nota C (el 3H va en contra, justo antes de la apertura)", casos.examinar(lista[0], res)[1][0])
         self.assertIn("Resumen", casos.texto(lista, res))
 
     def test_el_archivo_de_casos_del_repositorio_se_lee_bien(self):

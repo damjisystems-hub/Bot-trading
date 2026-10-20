@@ -55,14 +55,20 @@ class Evento:
             self.estado = "anulado"
 
 
-def evaluar(v1, v2, marco: str) -> Evento | None:
-    """El evento que forma la vela 2 respecto a la vela 1, o None si no forma ninguno."""
-    if v2.cierre > v1.maximo:
-        return Evento(marco, "ruptura", +1, v2.i_fin, v2.i_inicio)
-    if v2.cierre < v1.minimo:
-        return Evento(marco, "ruptura", -1, v2.i_fin, v2.i_inicio)
+def evaluar(v1, v2, marco: str, tolerancia: float = 0.0) -> Evento | None:
+    """El evento que forma la vela 2 respecto a la vela 1, o None si no forma ninguno.
+
+    Con «tolerancia» (regla candidata, solo para el diario), una vela 2 que barre un extremo y cierra
+    muy poco por fuera de ese mismo lado, hasta tolerancia × el tamaño de la vela 1, sigue contando
+    como rango. El autor lo hace en el gráfico de futuros, que tiene huecos (vídeo de «la única vela»).
+    """
+    margen = tolerancia * (v1.maximo - v1.minimo)
     toma_minimo = v2.minimo < v1.minimo
     toma_maximo = v2.maximo > v1.maximo
+    if v2.cierre > v1.maximo and (v2.cierre > v1.maximo + margen or toma_minimo):
+        return Evento(marco, "ruptura", +1, v2.i_fin, v2.i_inicio)
+    if v2.cierre < v1.minimo and (v2.cierre < v1.minimo - margen or toma_maximo):
+        return Evento(marco, "ruptura", -1, v2.i_fin, v2.i_inicio)
     if toma_minimo and not toma_maximo:
         return Evento(marco, "rango", +1, v2.i_fin, v2.i_inicio, objetivo=v1.maximo, barrido=v2.minimo)
     if toma_maximo and not toma_minimo:

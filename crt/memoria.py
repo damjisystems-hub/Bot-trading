@@ -1,7 +1,8 @@
 """La memoria del bot en un archivo CSV que se abre con Excel o Numbers.
 
 Una fila por situación vista: la primera vez que una idea de 4H da un order block en horario (se tome
-o no, y por qué) y cada entrada. Las descartadas llevan el resultado que habrían tenido. El bot de MT5
+o no, y por qué) y cada entrada. Las descartadas llevan el resultado que habrían tenido. Cada fila lleva
+cómo estaban el 3H y el 1H, las banderas rojas y la nota de la situación (A, B o C). El bot de MT5
 escribe el mismo archivo con las mismas columnas, así que el informe de aprendizaje sirve para los dos.
 """
 
@@ -14,8 +15,8 @@ from .motor import Resultado
 
 COLUMNAS = [
     "mercado", "hora_ny", "direccion", "decision", "sesion", "dia_semana",
-    "sesgo_semanal", "sesgo_mensual", "diario", "via_diario", "via_4h", "escenario",
-    "vela1_rel", "stop_rel", "objetivo_r", "noticias",
+    "sesgo_semanal", "sesgo_mensual", "diario", "via_diario", "via_4h", "h3", "h1", "escenario",
+    "vela1_rel", "stop_rel", "objetivo_r", "noticias", "banderas", "nota",
     "entrada", "stop", "tp", "resultado", "r", "mfe_r", "mae_r", "tomada",
 ]  # fmt: skip
 DIAS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
@@ -44,11 +45,15 @@ def filas(res: Resultado) -> list[dict]:
             "diario": s.diario,
             "via_diario": s.via_diario,
             "via_4h": s.via_4h,
+            "h3": s.h3,
+            "h1": s.h1,
             "escenario": s.escenario,
             "vela1_rel": _numero(s.vela1_rel),
             "stop_rel": _numero(s.stop_rel),
             "objetivo_r": _numero(s.objetivo_r),
             "noticias": s.noticias,
+            "banderas": " | ".join(s.banderas),
+            "nota": s.nota,
             "entrada": f"{op.entrada:.{dec}f}" if op else "",
             "stop": f"{op.stop_inicial:.{dec}f}" if op else "",
             "tp": f"{op.tp:.{dec}f}" if op else "",

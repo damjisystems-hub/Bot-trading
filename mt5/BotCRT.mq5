@@ -12,14 +12,19 @@
 //
 // Apunta cada situación en la memoria (MQL5/Files/BotCRT/memoria_<mercado>.csv), con las mismas
 // columnas y los mismos motivos que la memoria del Python (crt/memoria.py): las señales que toma y
-// las que descarta. Las descartadas las sigue como operaciones «fantasma» hasta su stop o su TP,
-// para saber qué habría pasado. Esa memoria es la que revisa Claude para aprender.
+// las que descarta, con sus banderas rojas y su nota (A, B o C). Las descartadas las sigue como
+// operaciones «fantasma» hasta su stop o su TP, para saber qué habría pasado. Esa memoria es la que
+// revisa Claude para aprender.
+//
+// Disciplina (vídeo de psicología): tope de pérdida del día entre todos los mercados en los que esté
+// puesto el bot (se cuentan con las variables globales de MT5), racha de stops en el panel y, como
+// regla candidata, un día de pausa tras una racha.
 //
 // Por defecto SOLO AVISA. Nunca opera en una cuenta real salvo que se active a propósito.
 //
 // Si cambias una regla aquí, cámbiala también en crt/ (y al revés): los dos tienen que decidir igual.
 #property copyright   "Damji Systems"
-#property version     "1.00"
+#property version     "1.10"
 #property description "Bot CRT: avisa de las entradas de la estrategia CRT y apunta la memoria."
 #property description "Por defecto solo avisa. No opera en cuentas reales."
 
@@ -31,6 +36,20 @@ enum ModoBot
   {
    SOLO_AVISOS    = 0,  // Solo avisos
    OPERAR_EN_DEMO = 1   // Operar en una cuenta demo
+  };
+
+enum ModoSalida1H
+  {
+   SALIDA_NO      = 0,  // No
+   SALIDA_SALIR   = 1,  // Salir
+   SALIDA_ENTRADA = 2   // Stop a la entrada si va ganando; si no, salir
+  };
+
+enum Exigencia
+  {
+   EXIGIR_NADA    = 0,  // No
+   EXIGIR_VERDE   = 1,  // Que esté a favor (verde)
+   EXIGIR_NO_ROJO = 2   // Que no vaya en contra (no rojo)
   };
 
 input group "Qué hace el bot"
@@ -50,12 +69,21 @@ input int      MaxOperacionesDia        = 2;            // Máximo de operacione
 input int      ColchonStopPuntos        = 30;           // Colchón del stop detrás del barrido (puntos)
 input bool     DiarioBastaNoRojo        = false;        // Diario: basta con que no vaya en contra
 input bool     ComprobarObjetivoDiario  = true;         // No entrar si el TP queda más allá del objetivo del diario
+input double   PerdidaMaxDiaR           = 3;            // Tope de pérdida del día entre todos los mercados, en R (0 = sin tope)
+input int      HoraInicio4H             = 17;           // Las velas de 4H empiezan a esta hora de NY (17 = MT5; 18 = futuros)
 
 input group "Reglas candidatas (apagadas hasta que el laboratorio las apruebe)"
 input double   StopAEntradaEnR          = 0;            // Stop a la entrada al llegar a +X R (0 = no)
 input double   Vela1Minima              = 0;            // Vela 1 mínima, en veces el tamaño medio de 4H (0 = no)
 input bool     SinNoticias              = false;        // No entrar los días con noticias fuertes
 input string   EscenariosPermitidos     = "";           // Escenarios permitidos (vacío = todos; p. ej. 1,2)
+input ModoSalida1H Salida1H             = SALIDA_NO;    // Si se forma un rango de 1H en contra
+input bool     TpEnObjetivo4H           = false;        // TP en el objetivo del rango de 4H (no a 1 a Ratio)
+input Exigencia Exigir1H                = EXIGIR_NADA;  // Exigir el 1H
+input Exigencia Exigir3H                = EXIGIR_NADA;  // Exigir el 3H
+input bool     SoloSinBanderas          = false;        // Solo situaciones sin banderas rojas (nota A)
+input int      PausaTrasStops           = 0;            // Un día de pausa tras tantos stops seguidos (0 = no)
+input double   ToleranciaDiario         = 0;            // Rango diario aunque cierre hasta esta parte de la vela 1 por fuera (0 = no; p. ej. 0.1)
 
 input group "Datos y memoria"
 input int      DesfaseServidorNY        = 7;            // Horas que el servidor va por delante de Nueva York
@@ -81,6 +109,7 @@ input long     NumeroMagico             = 20261020;     // Número de las órden
 #define MARCO_D1          2
 #define MARCO_W1          3
 #define MARCO_MN          4
+#define MARCO_H3          5
 #define SEG_M15           900
 #define SEG_HORA          3600
 #define SEG_DIA           86400
@@ -89,6 +118,7 @@ input long     NumeroMagico             = 20261020;     // Número de las órden
 #define VELAS_MEDIA       20         // el tamaño «normal» de una vela es la media de las últimas 20
 #define MIN_VELAS_MEDIA   5          // con menos velas cerradas no hay media
 #define STOP_MINIMO_EN_DIFERENCIALES 3  // un stop más corto que esto se lo comería el diferencial
+#define MINIMO_R_OBJETIVO 1.0        // con el TP en el objetivo del 4H, no se entra si está a menos de esto
 #define APERTURA_NY_MIN   570        // 9:30 de Nueva York, en minutos
 #define MINUTOS_TARDE     20         // una barra que llega con más retraso no avisa ni opera
 #define MAX_IDEAS         4000       // ideas que se recuerdan (usadas y vistas)
@@ -107,14 +137,33 @@ input long     NumeroMagico             = 20261020;     // Número de las órden
 #define DEC_BARRIDO       8
 #define DEC_STOP_CORTO    9
 #define DEC_NO_CABE      10
+#define DEC_H3           11
+#define DEC_H1           12
+#define DEC_BANDERAS     13
+#define DEC_OBJETIVO     14
+#define DEC_PAUSA        15
+#define DEC_PERDIDA      16
 
 #define RES_NINGUNO       0
 #define RES_TP            1
 #define RES_SL            2
 #define RES_BE            3
 #define RES_SEMANAL       4
+#define RES_1H            5
 
-#define CABECERA_MEMORIA  "mercado,hora_ny,direccion,decision,sesion,dia_semana,sesgo_semanal,sesgo_mensual,diario,via_diario,via_4h,escenario,vela1_rel,stop_rel,objetivo_r,noticias,entrada,stop,tp,resultado,r,mfe_r,mae_r,tomada"
+// Banderas rojas (crt/motor.py: BANDERAS), en el mismo orden. Se guardan como bits.
+#define BAN_DIARIO_EN_CONTRA   1
+#define BAN_DIARIO_MAXIMOS     2
+#define BAN_DIARIO_MINIMOS     4
+#define BAN_4H_MAXIMOS         8
+#define BAN_4H_MINIMOS        16
+#define BAN_3H_EN_CONTRA      32
+#define BAN_1H_EN_CONTRA      64
+#define BAN_ANTES_APERTURA   128
+#define BAN_LEJOS            256
+#define NUM_BANDERAS           9
+
+#define CABECERA_MEMORIA  "mercado,hora_ny,direccion,decision,sesion,dia_semana,sesgo_semanal,sesgo_mensual,diario,via_diario,via_4h,h3,h1,escenario,vela1_rel,stop_rel,objetivo_r,noticias,banderas,nota,entrada,stop,tp,resultado,r,mfe_r,mae_r,tomada"
 #define CABECERA_NOTICIAS "fecha,hora,moneda,evento,importancia"
 
 string DIAS[7] = {"domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"};
@@ -174,10 +223,13 @@ struct Senal
    int               diario;      // 1 verde, 0 ámbar, -1 rojo (para esta dirección)
    int               via_diario;
    int               via_4h;
+   int               h3;          // color del 3H para esta dirección
+   int               h1;          // color del 1H para esta dirección
    int               escenario;
    double            vela1_rel;
    double            stop_rel;
    double            objetivo_r;
+   int               banderas;    // banderas rojas (bits BAN_*)
    bool              apuntar;     // escribirla en la memoria
    bool              hay_op;
    bool              tomada;
@@ -190,6 +242,7 @@ struct Senal
    double            dif;
    bool              en_entrada;  // el stop ya está en la entrada
    int               resultado;
+   datetime          hora_salida; // hora de Nueva York a la que se cerró
    double            salida;
    double            r;
    double            mfe;         // lo más que llegó a ir a favor, en R
@@ -208,8 +261,9 @@ long ClaveAnticipo(const int marco, const int i_inicio, const int dir)
 
 // ───────────────────────── Rangos ─────────────────────────
 
-// El evento que forma la vela 2 respecto a la vela 1 (crt/rangos.py: evaluar).
-bool Evaluar(const Vela &v1, const Vela &v2, Evento &e)
+// El evento que forma la vela 2 respecto a la vela 1 (crt/rangos.py: evaluar). Con «tolerancia», una
+// vela 2 que barre un extremo y cierra muy poco por fuera de ese lado sigue contando como rango.
+bool Evaluar(const Vela &v1, const Vela &v2, Evento &e, const double tolerancia)
   {
    ZeroMemory(e);
    e.i_formado = v2.i_fin;
@@ -217,20 +271,21 @@ bool Evaluar(const Vela &v1, const Vela &v2, Evento &e)
    e.estado = EST_ACTIVO;
    e.velas_hasta_completar = -1;
    e.vela1_rel = VACIO;
-   if(v2.cierre > v1.maximo)
+   double margen = tolerancia * (v1.maximo - v1.minimo);
+   bool toma_minimo = v2.minimo < v1.minimo;
+   bool toma_maximo = v2.maximo > v1.maximo;
+   if(v2.cierre > v1.maximo && (v2.cierre > v1.maximo + margen || toma_minimo))
      {
       e.tipo = TIPO_RUPTURA;
       e.direccion = 1;
       return true;
      }
-   if(v2.cierre < v1.minimo)
+   if(v2.cierre < v1.minimo && (v2.cierre < v1.minimo - margen || toma_maximo))
      {
       e.tipo = TIPO_RUPTURA;
       e.direccion = -1;
       return true;
      }
-   bool toma_minimo = v2.minimo < v1.minimo;
-   bool toma_maximo = v2.maximo > v1.maximo;
    if(toma_minimo && !toma_maximo)
      {
       e.tipo = TIPO_RANGO;
@@ -290,15 +345,20 @@ public:
    int               ultimo;      // índice del último evento en ev[], -1 si no hay
    int               i_barrido_alc;  // barra en la que la vela en curso barrió el mínimo de la anterior
    int               i_barrido_baj;  // ... y el máximo
+   int               inicio_4h;      // hora de Nueva York a la que empiezan las velas de 4H
+   double            tolerancia;     // cierre un poco por fuera que aún cuenta como rango (ver Evaluar)
 
-   void              Iniciar(const string n, const int t, CMarco *m);
+   void              Iniciar(const string n, const int t, CMarco *m, const int h4 = 17, const double tol = 0);
    void              ClaveYFin(const datetime inicio_ny, datetime &k, datetime &fin);
    bool              TocaCerrarAntes(const Vela &b);
    bool              TocaCerrarDespues(const Vela &b);
    void              ActualizarConBarra(const Vela &b);
    void              Sumar(const Vela &b);
-   void              Cerrar(void);
+   bool              Cerrar(void);
    bool              DameSetup(const int dir, const double precio, Setup &s);
+   bool              DameAnticipo(const int dir, const double precio, Setup &s);
+   bool              Tomando(const int dir);
+   void              UltimoEvento(Evento &e) { e = ev[ultimo]; }
    int               ColorSemaforo(const int dir, const double precio);
    int               SemaforoCerrado(const int dir);
    int               DireccionUltimo(void);
@@ -313,11 +373,13 @@ private:
    int               EscenarioDesdeUltimo(const int dir);
   };
 
-void CMarco::Iniciar(const string n, const int t, CMarco *m)
+void CMarco::Iniciar(const string n, const int t, CMarco *m, const int h4, const double tol)
   {
    nombre = n;
    tipo = t;
    menor = m;
+   inicio_4h = h4;
+   tolerancia = tol;
    ArrayResize(cerradas, 0);
    ArrayResize(ev, 0);
    ZeroMemory(parcial);
@@ -335,16 +397,25 @@ void CMarco::ClaveYFin(const datetime inicio_ny, datetime &k, datetime &fin)
    long t = (long)inicio_ny + DESFASE_DIA;
    long kl = 0;
    long fl = 0;
+   if(tipo == MARCO_H4)
+     {
+      long desfase = (long)(24 - inicio_4h) * SEG_HORA;
+      long t4 = (long)inicio_ny + desfase;
+      kl = t4 - t4 % (4 * SEG_HORA);
+      k = (datetime)kl;
+      fin = (datetime)(kl + 4 * SEG_HORA - desfase);
+      return;
+     }
    if(tipo == MARCO_H1)
      {
       kl = t - t % SEG_HORA;
       fl = kl + SEG_HORA;
      }
    else
-      if(tipo == MARCO_H4)
+      if(tipo == MARCO_H3)
         {
-         kl = t - t % (4 * SEG_HORA);
-         fl = kl + 4 * SEG_HORA;
+         kl = t - t % (3 * SEG_HORA);
+         fl = kl + 3 * SEG_HORA;
         }
       else
          if(tipo == MARCO_D1)
@@ -444,7 +515,8 @@ void CMarco::Sumar(const Vela &b)
      }
   }
 
-void CMarco::Cerrar(void)
+// Cierra la vela en curso. Devuelve true si forma un evento nuevo (que queda como el último).
+bool CMarco::Cerrar(void)
   {
    Vela vela = parcial;
    hay_parcial = false;
@@ -463,7 +535,7 @@ void CMarco::Cerrar(void)
    int nc = ArraySize(cerradas);
    if(nc > 0)
      {
-      hay_nuevo = Evaluar(cerradas[nc - 1], vela, nuevo);
+      hay_nuevo = Evaluar(cerradas[nc - 1], vela, nuevo, tolerancia);
       if(hay_nuevo)
          nuevo.vela1_rel = Relativo(cerradas[nc - 1]);
      }
@@ -478,6 +550,7 @@ void CMarco::Cerrar(void)
       ev[m] = nuevo;
       ultimo = m;
      }
+   return hay_nuevo;
   }
 
 // Quita los rangos que ya no hay que seguir. El último evento se queda siempre.
@@ -550,7 +623,7 @@ int CMarco::EscenarioDesdeUltimo(const int dir)
   }
 
 // El rango a favor desde el que buscar la entrada ahora mismo: cerrado, o anticipado con el marco
-// menor (la vela en curso ya barrió el extremo de la anterior y el precio volvió dentro).
+// menor (crt/marcos.py: setup).
 bool CMarco::DameSetup(const int dir, const double precio, Setup &s)
   {
    ZeroMemory(s);
@@ -567,12 +640,21 @@ bool CMarco::DameSetup(const int dir, const double precio, Setup &s)
       s.vela1_rel = ev[ultimo].vela1_rel;
       return true;
      }
+   return DameAnticipo(dir, precio, s);
+  }
+
+// El rango a favor que está formando la vela en curso, visto con el marco menor: ya barrió el extremo
+// de la anterior (sin tomar también el otro, porque entonces no puede ser rango), el precio volvió
+// dentro y el marco menor formó un rango a favor después del barrido (crt/marcos.py: anticipo).
+bool CMarco::DameAnticipo(const int dir, const double precio, Setup &s)
+  {
+   ZeroMemory(s);
    int nc = ArraySize(cerradas);
    if(menor == NULL || !hay_parcial || nc == 0)
       return false;
    int ib = (dir > 0) ? i_barrido_alc : i_barrido_baj;
    Vela previa = cerradas[nc - 1];
-   if(ib < 0 || !(previa.minimo < precio && precio < previa.maximo))
+   if(ib < 0 || !(previa.minimo < precio && precio < previa.maximo) || Tomando(dir))
       return false;
    Setup sm;
    if(!menor.DameSetup(dir, precio, sm))
@@ -589,6 +671,18 @@ bool CMarco::DameSetup(const int dir, const double precio, Setup &s)
    s.escenario = EscenarioDesdeUltimo(dir);
    s.vela1_rel = Relativo(previa);
    return true;
+  }
+
+// ¿La vela en curso ya ha pasado el extremo de la anterior hacia ese lado? En compras, que está
+// «tomando máximos»: si vuelve a cerrar dentro, forma un rango en contra.
+bool CMarco::Tomando(const int dir)
+  {
+   int nc = ArraySize(cerradas);
+   if(!hay_parcial || nc == 0)
+      return false;
+   if(dir > 0)
+      return parcial.maximo > cerradas[nc - 1].maximo;
+   return parcial.minimo < cerradas[nc - 1].minimo;
   }
 
 int CMarco::SemaforoCerrado(const int dir)
@@ -620,6 +714,7 @@ int CMarco::DireccionUltimo(void)
 // ───────────────────────── Estado del bot ─────────────────────────
 
 CMarco    g_h1;
+CMarco    g_h3;
 CMarco    g_h4;
 CMarco    g_d1;
 CMarco    g_w1;
@@ -636,6 +731,11 @@ long      g_usadas[];                // ideas que ya dieron su entrada (o se des
 long      g_vistas[];                // ideas que ya están en la memoria
 long      g_dia_ops = -1;
 int       g_ops_dia = 0;
+long      g_dia_r = -1;              // día de trading de g_r_dia
+double    g_r_dia = 0;               // resultado en R de las operaciones de este mercado cerradas ese día
+int       g_racha = 0;               // stops seguidos de las operaciones tomadas
+long      g_pausa_hasta = -1;        // con la regla de la pausa: último día de trading sin operar
+long      g_dia_aviso_tope = -1;     // día en el que ya se avisó del tope de pérdida
 bool      g_listo = false;
 datetime  g_ultima_barra = 0;        // hora del servidor de la última barra procesada
 bool      g_en_vivo = false;
@@ -727,6 +827,18 @@ string TextoDecision(const int d)
          return "stop demasiado corto";
       case DEC_NO_CABE:
          return "el TP no cabe antes del objetivo del diario";
+      case DEC_H3:
+         return "el 3H no acompaña";
+      case DEC_H1:
+         return "el 1H no acompaña";
+      case DEC_BANDERAS:
+         return "situación con banderas rojas";
+      case DEC_OBJETIVO:
+         return "el objetivo del 4H está a menos de 1 R";
+      case DEC_PAUSA:
+         return "pausa tras una racha de stops";
+      case DEC_PERDIDA:
+         return "tope de pérdida del día";
      }
    return "";
   }
@@ -743,8 +855,62 @@ string TextoResultado(const int r)
          return "BE";
       case RES_SEMANAL:
          return "Cierre semanal";
+      case RES_1H:
+         return "Salida por 1H";
      }
    return "";
+  }
+
+string TextoBandera(const int b)
+  {
+   switch(b)
+     {
+      case BAN_DIARIO_EN_CONTRA:
+         return "el diario va en contra";
+      case BAN_DIARIO_MAXIMOS:
+         return "el diario está tomando máximos";
+      case BAN_DIARIO_MINIMOS:
+         return "el diario está tomando mínimos";
+      case BAN_4H_MAXIMOS:
+         return "el 4H está tomando máximos";
+      case BAN_4H_MINIMOS:
+         return "el 4H está tomando mínimos";
+      case BAN_3H_EN_CONTRA:
+         return "el 3H va en contra";
+      case BAN_1H_EN_CONTRA:
+         return "el 1H va en contra";
+      case BAN_ANTES_APERTURA:
+         return "justo antes de la apertura";
+      case BAN_LEJOS:
+         return "entrada lejos del barrido";
+     }
+   return "";
+  }
+
+// «el 3H va en contra | justo antes de la apertura», en el mismo orden que el Python.
+string TextoBanderas(const int banderas)
+  {
+   string t = "";
+   for(int k = 0; k < NUM_BANDERAS; k++)
+     {
+      int bit = 1 << k;
+      if((banderas & bit) == 0)
+         continue;
+      t += (t == "") ? TextoBandera(bit) : " | " + TextoBandera(bit);
+     }
+   return t;
+  }
+
+// A: sin banderas rojas; B: con una; C: con dos o más.
+string Nota(const int banderas)
+  {
+   int n = 0;
+   for(int k = 0; k < NUM_BANDERAS; k++)
+      if((banderas & (1 << k)) != 0)
+         n++;
+   if(n == 0)
+      return "A";
+   return (n == 1) ? "B" : "C";
   }
 
 string TextoVia(const int via)
@@ -786,6 +952,14 @@ string TextoDireccion(const int d)
   }
 
 string Numero(const double x) { return x == VACIO ? "" : DoubleToString(x, 2); }
+
+// -1.5 → «-1,5 R»; 2 → «+2,0 R»
+string NumeroR(const double x)
+  {
+   string t = (x >= 0 ? "+" : "") + DoubleToString(x, 1);
+   StringReplace(t, ".", ",");
+   return t + " R";
+  }
 
 string Precio(const double x) { return DoubleToString(x, _Digits); }
 
@@ -1144,6 +1318,46 @@ void SumarOperacionDelDia(const long dia)
    g_ops_dia++;
   }
 
+datetime AhoraNY(void) { return (datetime)((long)TimeTradeServer() - (long)DesfaseServidorNY * SEG_HORA); }
+
+// El siguiente día de trading de lunes a viernes (el 1-1-1970 fue jueves).
+long SiguienteDiaHabil(const long dia)
+  {
+   long d = dia + 1;
+   while((d + 4) % 7 == 0 || (d + 4) % 7 == 6)
+      d++;
+   return d;
+  }
+
+// ¿El color de un marco (1 verde, 0 ámbar, -1 rojo) cumple lo que se exige?
+bool Acompana(const int c, const Exigencia e)
+  {
+   if(e == EXIGIR_VERDE)
+      return c == 1;
+   return c != -1;
+  }
+
+// Variable global de MT5 con lo que lleva este mercado ese día: así cada bot ve lo de los demás.
+string VariableDelDia(const long dia) { return "BotCRT.R." + IntegerToString(dia) + "." + NombreDeArchivo(g_mercado); }
+
+// Resultado en R de las operaciones cerradas ese día. En directo suma todos los mercados en los que
+// esté puesto el bot; en la historia, solo este, como la prueba en Python.
+double ResultadoDelDia(const long dia)
+  {
+   double r = (dia == g_dia_r) ? g_r_dia : 0.0;
+   if(!g_en_vivo || MQLInfoInteger(MQL_TESTER) != 0)
+      return r;
+   string prefijo = "BotCRT.R." + IntegerToString(dia) + ".";
+   string propia = VariableDelDia(dia);
+   for(int k = GlobalVariablesTotal() - 1; k >= 0; k--)
+     {
+      string nombre = GlobalVariableName(k);
+      if(StringFind(nombre, prefijo) == 0 && nombre != propia)
+         r += GlobalVariableGet(nombre);
+     }
+   return r;
+  }
+
 // ───────────────────────── Memoria ─────────────────────────
 
 // Escribe una fila de la memoria con las mismas columnas que crt/memoria.py.
@@ -1161,11 +1375,15 @@ void Apuntar(const Senal &s)
    l += "," + TextoColor(s.diario);
    l += "," + TextoVia(s.via_diario);
    l += "," + TextoVia(s.via_4h);
+   l += "," + TextoColor(s.h3);
+   l += "," + TextoColor(s.h1);
    l += "," + TextoEscenario(s.escenario);
    l += "," + Numero(s.vela1_rel);
    l += "," + Numero(s.stop_rel);
    l += "," + Numero(s.objetivo_r);
    l += "," + Csv(NoticiasDelDia(s.hora_ny));
+   l += "," + Csv(TextoBanderas(s.banderas));
+   l += "," + Nota(s.banderas);
    l += "," + (s.hay_op ? Precio(s.entrada) : "");
    l += "," + (s.hay_op ? Precio(s.stop_inicial) : "");
    l += "," + (s.hay_op ? Precio(s.tp) : "");
@@ -1246,6 +1464,9 @@ void Avisar(Senal &s)
    t += " · Entrada " + Precio(s.entrada) + " · Stop " + Precio(s.stop_inicial) + " · TP " + Precio(s.tp);
    t += " · 1 a " + NumeroCorto(Ratio) + " · " + TextoLotes(s);
    t += " · " + (s.escenario == 0 ? "otro escenario" : "Escenario " + IntegerToString(s.escenario));
+   t += " · Nota " + Nota(s.banderas);
+   if(s.banderas != 0)
+      t += " (" + TextoBanderas(s.banderas) + ")";
    string noticias = NoticiasDelDia(s.hora_ny);
    if(noticias != "")
       t += " · Hoy: " + noticias;
@@ -1300,15 +1521,16 @@ void CerrarReal(const Senal &s)
    if(s.ticket == 0 || !PositionSelectByTicket(s.ticket))
       return;
    if(!g_trade.PositionClose(s.ticket))
-      Print("BotCRT: no he podido cerrar la posición del viernes: ", g_trade.ResultRetcodeDescription());
+      Print("BotCRT: no he podido cerrar la posición: ", g_trade.ResultRetcodeDescription());
   }
 
 // ───────────────────────── Operaciones (la real y las fantasma) ─────────────────────────
 
-void Salir(Senal &s, const double precio, const int resultado)
+void Salir(Senal &s, const double precio, const int resultado, const datetime hora)
   {
    s.salida = precio;
    s.resultado = resultado;
+   s.hora_salida = hora;
    s.r = (precio - s.entrada) / s.riesgo * s.direccion;
   }
 
@@ -1322,6 +1544,7 @@ bool RevisarSalida(Senal &s, const Vela &b)
   {
    double ap, mx, mn, salida_stop, a_favor, en_contra;
    bool toca_stop, toca_tp;
+   datetime hora = b.inicio + SEG_M15;
    if(s.direccion > 0)
      {
       ap = b.apertura;
@@ -1348,14 +1571,14 @@ bool RevisarSalida(Senal &s, const Vela &b)
       s.mae = en_contra;
    if(toca_stop)   // si en la misma barra toca también el TP, cuenta el stop
      {
-      Salir(s, salida_stop, s.en_entrada ? RES_BE : RES_SL);
+      Salir(s, salida_stop, s.en_entrada ? RES_BE : RES_SL, hora);
       return true;
      }
    if(a_favor > s.mfe)
       s.mfe = a_favor;
    if(toca_tp)
      {
-      Salir(s, s.tp, RES_TP);
+      Salir(s, s.tp, RES_TP, hora);
       return true;
      }
    if(StopAEntradaEnR > 0 && !s.en_entrada && s.mfe >= StopAEntradaEnR)
@@ -1379,8 +1602,36 @@ void Terminar(Senal &s)
       Print(t);
       Notificar(t);
      }
-   if(s.tomada && s.ticket > 0 && s.resultado == RES_SEMANAL)
+   if(s.tomada && s.ticket > 0 && (s.resultado == RES_SEMANAL || s.resultado == RES_1H))
       CerrarReal(s);
+  }
+
+// La operación real se ha cerrado: se lleva la cuenta del día y de la racha de stops (crt/motor.py:
+// _cerrada) y se deja en la variable global para los bots de los otros mercados.
+void CuentaCerrada(const Senal &s)
+  {
+   long dia = DiaDeTrading(s.hora_salida - SEG_M15);
+   if(dia != g_dia_r)
+     {
+      g_dia_r = dia;
+      g_r_dia = 0;
+     }
+   g_r_dia += s.r;
+   g_racha = (s.r < 0) ? g_racha + 1 : 0;
+   if(PausaTrasStops > 0 && g_racha >= PausaTrasStops)
+     {
+      g_pausa_hasta = SiguienteDiaHabil(dia);
+      g_racha = 0;
+      if(g_en_vivo)
+        {
+         string t = "BOT CRT · " + g_mercado + " · " + IntegerToString(PausaTrasStops) + " stops seguidos: pausa hasta el "
+                    + Fecha((datetime)(g_pausa_hasta * SEG_DIA)) + ". Descansad (vídeo de psicología).";
+         Print(t);
+         Notificar(t);
+        }
+     }
+   if(dia == DiaDeTrading(AhoraNY()) && MQLInfoInteger(MQL_TESTER) == 0)
+      GlobalVariableSet(VariableDelDia(dia), g_r_dia);
   }
 
 void QuitarFantasma(const int k)
@@ -1396,6 +1647,7 @@ void RevisarSalidas(const Vela &b)
    if(g_hay_real && RevisarSalida(g_real, b))
      {
       Terminar(g_real);
+      CuentaCerrada(g_real);
       g_hay_real = false;
      }
    for(int k = ArraySize(g_fantasmas) - 1; k >= 0; k--)
@@ -1407,20 +1659,65 @@ void RevisarSalidas(const Vela &b)
   }
 
 // Cierra lo abierto (la real y las fantasma) al precio de cierre: fin de semana o hueco en los datos.
-void CerrarTodo(const double cierre)
+void CerrarTodo(const double cierre, const datetime hora)
   {
    if(g_hay_real)
      {
-      Salir(g_real, PrecioDeSalida(g_real, cierre), RES_SEMANAL);
+      Salir(g_real, PrecioDeSalida(g_real, cierre), RES_SEMANAL, hora);
       Terminar(g_real);
+      CuentaCerrada(g_real);
       g_hay_real = false;
      }
    for(int k = 0; k < ArraySize(g_fantasmas); k++)
      {
-      Salir(g_fantasmas[k], PrecioDeSalida(g_fantasmas[k], cierre), RES_SEMANAL);
+      Salir(g_fantasmas[k], PrecioDeSalida(g_fantasmas[k], cierre), RES_SEMANAL, hora);
       Terminar(g_fantasmas[k]);
      }
    ArrayResize(g_fantasmas, 0);
+  }
+
+// Regla candidata: un rango de 1H en contra cierra la operación o, si va ganando y así se ha elegido,
+// le lleva el stop a la entrada. Devuelve true si la operación se cierra (crt/motor.py: _salida_1h).
+bool SalidaPor1H(Senal &s, const datetime hora, const double cierre)
+  {
+   double precio = PrecioDeSalida(s, cierre);
+   if(Salida1H == SALIDA_ENTRADA && (precio - s.entrada) * s.direccion > 0)
+     {
+      if(!s.en_entrada)
+        {
+         s.stop = s.entrada;   // vale desde la barra siguiente
+         s.en_entrada = true;
+         if(s.tomada && s.ticket > 0)
+            MoverStopReal(s);
+        }
+      return false;
+     }
+   Salir(s, precio, RES_1H, hora);
+   return true;
+  }
+
+// Cierra la vela de 1H y, con la regla de salida por 1H, mira si ha formado un rango en contra de lo
+// que está abierto (crt/motor.py: _cerrar).
+void CerrarH1(const datetime hora, const double cierre)
+  {
+   if(!g_h1.Cerrar() || Salida1H == SALIDA_NO)
+      return;
+   Evento e;
+   g_h1.UltimoEvento(e);
+   if(e.tipo != TIPO_RANGO)
+      return;
+   if(g_hay_real && e.direccion == -g_real.direccion && SalidaPor1H(g_real, hora, cierre))
+     {
+      Terminar(g_real);
+      CuentaCerrada(g_real);
+      g_hay_real = false;
+     }
+   for(int k = ArraySize(g_fantasmas) - 1; k >= 0; k--)
+      if(e.direccion == -g_fantasmas[k].direccion && SalidaPor1H(g_fantasmas[k], hora, cierre))
+        {
+         Terminar(g_fantasmas[k]);
+         QuitarFantasma(k);
+        }
   }
 
 // ───────────────────────── Decisión ─────────────────────────
@@ -1448,7 +1745,15 @@ int Niveles(const int d, const double precio, const Setup &s, const double dif,
      }
    if(riesgo <= 0 || riesgo < STOP_MINIMO_EN_DIFERENCIALES * dif)
       return DEC_STOP_CORTO;
-   tp = entrada + d * Ratio * riesgo;
+   if(!TpEnObjetivo4H)
+     {
+      tp = entrada + d * Ratio * riesgo;
+      return DEC_NINGUNA;
+     }
+   // Regla candidata: el TP en el objetivo del rango de 4H («en fondeo solo voy a por los primeros objetivos»).
+   tp = (d > 0) ? s.objetivo : s.objetivo + dif;
+   if((tp - entrada) * d < MINIMO_R_OBJETIVO * riesgo)
+      return DEC_OBJETIVO;
    return DEC_NINGUNA;
   }
 
@@ -1459,16 +1764,50 @@ bool Cabe(const int d, const double tp, const double objetivo, const double dif)
    return (d > 0) ? tp <= objetivo : tp >= objetivo + dif;
   }
 
-// Reglas candidatas y tope del día.
-int Filtros(const Setup &s, const datetime hora, const Vela &b)
+// Las banderas rojas de esta situación (crt/motor.py: _banderas).
+int Banderas(const int d, const datetime hora, const int c3, const int c1, const bool hay_niveles, const double riesgo)
   {
+   int b = 0;
+   if(g_d1.SemaforoCerrado(d) == -1)
+      b |= BAN_DIARIO_EN_CONTRA;
+   if(g_d1.Tomando(d))
+      b |= (d > 0) ? BAN_DIARIO_MAXIMOS : BAN_DIARIO_MINIMOS;
+   if(g_h4.Tomando(d))
+      b |= (d > 0) ? BAN_4H_MAXIMOS : BAN_4H_MINIMOS;
+   if(c3 == -1)
+      b |= BAN_3H_EN_CONTRA;
+   if(c1 == -1)
+      b |= BAN_1H_EN_CONTRA;
+   int m = MinutosDelDia(hora);
+   if(APERTURA_NY_MIN - 30 < m && m <= APERTURA_NY_MIN)
+      b |= BAN_ANTES_APERTURA;
+   double medio = g_h4.RangoMedio();
+   if(hay_niveles && medio != VACIO && medio != 0 && riesgo > medio)
+      b |= BAN_LEJOS;
+   return b;
+  }
+
+// Reglas candidatas, pausa y topes del día (crt/motor.py: _filtros), en el mismo orden.
+int Filtros(const Setup &s, const datetime hora, const Vela &b, const int c3, const int c1, const int banderas)
+  {
+   long dia = DiaDeTrading(b.inicio);
    if(!g_esc_ok[s.escenario])
       return DEC_ESCENARIO;
    if(Vela1Minima > 0 && (s.vela1_rel == VACIO || s.vela1_rel < Vela1Minima))
       return DEC_VELA1;
    if(SinNoticias && NoticiasDelDia(hora) != "")
       return DEC_NOTICIAS;
-   if(OperacionesDelDia(DiaDeTrading(b.inicio)) >= MaxOperacionesDia)
+   if(Exigir3H != EXIGIR_NADA && !Acompana(c3, Exigir3H))
+      return DEC_H3;
+   if(Exigir1H != EXIGIR_NADA && !Acompana(c1, Exigir1H))
+      return DEC_H1;
+   if(SoloSinBanderas && banderas != 0)
+      return DEC_BANDERAS;
+   if(g_pausa_hasta >= 0 && dia <= g_pausa_hasta)
+      return DEC_PAUSA;
+   if(PerdidaMaxDiaR > 0 && ResultadoDelDia(dia) <= -PerdidaMaxDiaR)
+      return DEC_PERDIDA;
+   if(OperacionesDelDia(dia) >= MaxOperacionesDia)
       return DEC_TOPE;
    return DEC_NINGUNA;
   }
@@ -1484,7 +1823,13 @@ void Mirar(const Vela &b, const int d)
       return;
    double precio = b.cierre;
    Setup s;
-   if(!g_h4.DameSetup(d, precio, s) || b.i_fin <= s.i_inicio)
+   if(!g_h4.DameSetup(d, precio, s))
+      return;
+   // La idea de 4H ya dio su entrada. Si la vela en curso está formando otro rango a favor (por
+   // ejemplo, tras barrer el stop), es una idea nueva: volver a entrar tras un stop.
+   if(s.via == VIA_CIERRE && IdeaEn(g_usadas, s) && !g_h4.DameAnticipo(d, precio, s))
+      return;
+   if(b.i_fin <= s.i_inicio)
       return;
    if(IdeaEn(g_usadas, s))
       return;                               // esta idea ya dio su entrada: no hay nada nuevo
@@ -1505,6 +1850,9 @@ void Mirar(const Vela &b, const int d)
 
    double entrada = 0, stop = 0, riesgo = 0, tp = 0;
    int motivo_niveles = Niveles(d, precio, s, b.dif, entrada, stop, riesgo, tp);
+   int c3 = g_h3.ColorSemaforo(d, precio);
+   int c1 = g_h1.ColorSemaforo(d, precio);
+   int banderas = Banderas(d, hora, c3, c1, motivo_niveles == DEC_NINGUNA, riesgo);
 
    int decision;
    if(SesgoDeFondo() != d)
@@ -1518,7 +1866,7 @@ void Mirar(const Vela &b, const int d)
          else
            {
             MarcarIdea(g_usadas, s);         // solo cuenta el primer order block de cada idea
-            decision = Filtros(s, hora, b);
+            decision = Filtros(s, hora, b, c3, c1, banderas);
             if(decision == DEC_NINGUNA)
               {
                if(motivo_niveles != DEC_NINGUNA)
@@ -1546,6 +1894,9 @@ void Mirar(const Vela &b, const int d)
    sen.diario = color_diario;
    sen.via_diario = hay_diario ? sd.via : VIA_NINGUNA;
    sen.via_4h = s.via;
+   sen.h3 = c3;
+   sen.h1 = c1;
+   sen.banderas = banderas;
    sen.escenario = s.escenario;
    sen.vela1_rel = s.vela1_rel;
    sen.stop_rel = VACIO;
@@ -1606,9 +1957,11 @@ void ProcesarBarra(Vela &b)
    // 1. Una semana nueva sin que la anterior cerrara en los datos: se cierra lo abierto donde se
    //    quedó el precio, y se cierran las velas que había.
    if(g_hay_anterior && g_w1.TocaCerrarAntes(b))
-      CerrarTodo(g_anterior.cierre);
+      CerrarTodo(g_anterior.cierre, g_anterior.inicio + SEG_M15);
    if(g_h1.TocaCerrarAntes(b))
-      g_h1.Cerrar();
+      CerrarH1(g_anterior.inicio + SEG_M15, g_anterior.cierre);
+   if(g_h3.TocaCerrarAntes(b))
+      g_h3.Cerrar();
    if(g_h4.TocaCerrarAntes(b))
       g_h4.Cerrar();
    if(g_d1.TocaCerrarAntes(b))
@@ -1621,6 +1974,8 @@ void ProcesarBarra(Vela &b)
    // 2. ¿Algún rango ha llegado a su objetivo? Y se suma la barra a las velas en curso.
    g_h1.ActualizarConBarra(b);
    g_h1.Sumar(b);
+   g_h3.ActualizarConBarra(b);
+   g_h3.Sumar(b);
    g_h4.ActualizarConBarra(b);
    g_h4.Sumar(b);
    g_d1.ActualizarConBarra(b);
@@ -1633,10 +1988,14 @@ void ProcesarBarra(Vela &b)
    // 3. Las operaciones abiertas: ¿tocan el stop o el TP?
    RevisarSalidas(b);
 
-   // 4. Se cierran las velas que terminan con esta barra. El viernes a las 17:00 se cierra todo.
+   // 4. Se cierran las velas que terminan con esta barra (con la salida por 1H, un rango de 1H en
+   //    contra cierra lo abierto). El viernes a las 17:00 se cierra todo.
+   datetime hora = b.inicio + SEG_M15;
    bool fin_de_semana = g_w1.TocaCerrarDespues(b);
    if(g_h1.TocaCerrarDespues(b))
-      g_h1.Cerrar();
+      CerrarH1(hora, b.cierre);
+   if(g_h3.TocaCerrarDespues(b))
+      g_h3.Cerrar();
    if(g_h4.TocaCerrarDespues(b))
       g_h4.Cerrar();
    if(g_d1.TocaCerrarDespues(b))
@@ -1646,7 +2005,7 @@ void ProcesarBarra(Vela &b)
    if(g_mn.TocaCerrarDespues(b))
       g_mn.Cerrar();
    if(fin_de_semana)
-      CerrarTodo(b.cierre);
+      CerrarTodo(b.cierre, hora);
 
    // 5. Al cierre de la barra, para compras y para ventas.
    if(g_hay_anterior && !fin_de_semana)
@@ -1743,6 +2102,7 @@ void RevisarBarrasNuevas(void)
       ProcesarRates(nuevas[k], true, retraso > MINUTOS_TARDE * 60);
       g_ultima_barra = nuevas[k].time;
      }
+   AvisoDeTope();
    ActualizarPanel();
   }
 
@@ -1759,7 +2119,7 @@ string TextoModo(void)
 
 string TextoAhora(void)
   {
-   datetime ahora = (datetime)((long)TimeTradeServer() - (long)DesfaseServidorNY * SEG_HORA);
+   datetime ahora = AhoraNY();
    int m = MinutosDelDia(ahora);
    string hora = HoraMin(ahora) + " en Nueva York";
    if(HoraPermitida(ahora))
@@ -1782,6 +2142,53 @@ string TextoOperacion(void)
    return t;
   }
 
+// Lo que lleva hoy este mercado y, con el tope, todos los mercados (vídeo de psicología: bloqueadores).
+string TextoHoy(void)
+  {
+   long hoy = DiaDeTrading(AhoraNY());
+   string t = NumeroR(hoy == g_dia_r ? g_r_dia : 0.0) + " en este mercado";
+   if(PerdidaMaxDiaR <= 0)
+      return t;
+   double todos = ResultadoDelDia(hoy);
+   t += " · " + NumeroR(todos) + " entre todos (tope: -" + NumeroCorto(PerdidaMaxDiaR) + " R)";
+   if(todos <= -PerdidaMaxDiaR)
+      t += " · TOPE ALCANZADO: hoy no entra más";
+   return t;
+  }
+
+string TextoRacha(void)
+  {
+   if(g_pausa_hasta >= 0 && DiaDeTrading(AhoraNY()) <= g_pausa_hasta)
+      return "en pausa hasta el " + Fecha((datetime)(g_pausa_hasta * SEG_DIA)) + " (regla de la pausa tras stops)";
+   string t = IntegerToString(g_racha) + (g_racha == 1 ? " stop seguido" : " stops seguidos");
+   if(g_racha >= 3)
+      t += " · Consejo del vídeo de psicología: tras una racha así, parad un día";
+   return t;
+  }
+
+// Avisa una sola vez al día, desde uno solo de los bots, de que se ha llegado al tope de pérdida.
+void AvisoDeTope(void)
+  {
+   if(PerdidaMaxDiaR <= 0 || MQLInfoInteger(MQL_TESTER) != 0)
+      return;
+   long hoy = DiaDeTrading(AhoraNY());
+   if(hoy == g_dia_aviso_tope)
+      return;
+   double r = ResultadoDelDia(hoy);
+   if(r > -PerdidaMaxDiaR)
+      return;
+   g_dia_aviso_tope = hoy;
+   string nombre = "BotCRT.AvisoTope." + IntegerToString(hoy);
+   if(!GlobalVariableCheck(nombre))
+      GlobalVariableSet(nombre, 0);
+   if(!GlobalVariableSetOnCondition(nombre, 1, 0))
+      return;                                 // ya avisó otro de los bots
+   string t = "BOT CRT · Tope de pérdida del día: " + NumeroR(r) + " entre los mercados. Hoy ya no avisa de más entradas. "
+              + "Cerrad el gráfico y descansad: mañana, más.";
+   Print(t);
+   Notificar(t);
+  }
+
 void ActualizarPanel(void)
   {
    if(!g_listo)
@@ -1797,7 +2204,11 @@ void ActualizarPanel(void)
         + " · mensual: " + TextoDireccion(g_mn.DireccionUltimo()) + ")\n";
    t += "Diario:  compras " + TextoColor(g_d1.ColorSemaforo(1, precio)) + " · ventas " + TextoColor(g_d1.ColorSemaforo(-1, precio)) + "\n";
    t += "4H:      compras " + TextoColor(g_h4.ColorSemaforo(1, precio)) + " · ventas " + TextoColor(g_h4.ColorSemaforo(-1, precio)) + "\n";
+   t += "3H:      compras " + TextoColor(g_h3.ColorSemaforo(1, precio)) + " · ventas " + TextoColor(g_h3.ColorSemaforo(-1, precio)) + "\n";
+   t += "1H:      compras " + TextoColor(g_h1.ColorSemaforo(1, precio)) + " · ventas " + TextoColor(g_h1.ColorSemaforo(-1, precio)) + "\n";
    t += "Ahora:   " + TextoAhora() + "\n";
+   t += "Hoy:     " + TextoHoy() + "\n";
+   t += "Racha:   " + TextoRacha() + "\n";
    t += "Operación: " + TextoOperacion() + "\n";
    t += "Fantasmas siguiéndose: " + IntegerToString(ArraySize(g_fantasmas)) + "\n";
    t += "Última señal: " + (g_ultima_senal == "" ? "ninguna desde que arrancó" : g_ultima_senal);
@@ -1811,8 +2222,9 @@ void Reiniciar(void)
    // Al cambiar un parámetro, MT5 vuelve a llamar a OnInit sin borrar las variables: se limpia todo.
    g_siguiente_id = 0;
    g_h1.Iniciar("H1", MARCO_H1, NULL);
-   g_h4.Iniciar("H4", MARCO_H4, GetPointer(g_h1));
-   g_d1.Iniciar("D1", MARCO_D1, GetPointer(g_h4));
+   g_h3.Iniciar("H3", MARCO_H3, NULL);
+   g_h4.Iniciar("H4", MARCO_H4, GetPointer(g_h1), HoraInicio4H);
+   g_d1.Iniciar("D1", MARCO_D1, GetPointer(g_h4), 17, ToleranciaDiario);
    g_w1.Iniciar("W1", MARCO_W1, NULL);
    g_mn.Iniciar("MN", MARCO_MN, NULL);
    ZeroMemory(g_anterior);
@@ -1825,6 +2237,11 @@ void Reiniciar(void)
    ArrayResize(g_vistas, 0);
    g_dia_ops = -1;
    g_ops_dia = 0;
+   g_dia_r = -1;
+   g_r_dia = 0;
+   g_racha = 0;
+   g_pausa_hasta = -1;
+   g_dia_aviso_tope = -1;
    g_listo = false;
    g_ultima_barra = 0;
    g_en_vivo = false;
@@ -1863,6 +2280,11 @@ int OnInit(void)
    if(Ratio <= 0 || RiesgoPct <= 0 || MaxOperacionesDia < 0 || MesesHistoria < 2 || ColchonStopPuntos < 0)
      {
       Alert("BotCRT: revisad los parámetros (ratio, riesgo, máximo de operaciones, meses de historia o colchón).");
+      return INIT_PARAMETERS_INCORRECT;
+     }
+   if(HoraInicio4H < 0 || HoraInicio4H > 23 || PerdidaMaxDiaR < 0 || PausaTrasStops < 0 || ToleranciaDiario < 0 || ToleranciaDiario >= 1)
+     {
+      Alert("BotCRT: revisad los parámetros (hora de las velas de 4H, tope de pérdida, pausa o tolerancia del diario).");
       return INIT_PARAMETERS_INCORRECT;
      }
    LeerEscenarios();

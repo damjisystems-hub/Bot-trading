@@ -3,12 +3,14 @@
 `BotCRT.mq5` es el bot que funciona dentro de MetaTrader 5. Hace lo mismo que la prueba con el pasado en Python
 (`crt/`), con las mismas reglas y en el mismo orden:
 
-- Vigila el mercado del gráfico en 4H, 1H y M15.
-- Cuando sale una entrada, **os avisa al móvil**.
+- Vigila el mercado del gráfico en diario, 4H, 3H, 1H y M15.
+- Cuando sale una entrada, **os avisa al móvil**, con la nota de la situación y sus banderas rojas.
 - **Apunta cada situación** en su memoria: las que toma y las que descarta, y por qué.
+- **Os frena** (vídeo de psicología): con el tope de pérdida del día entre todos los mercados, deja de avisar y os
+  dice que cerréis el gráfico.
 
-**Estado (20-10-2026):** está escrito, pero no se ha podido compilar en la sesión de Claude. Puede que al compilarlo
-salga algún error. Si pasa, copiad el texto del error y pasádselo a Claude (ver la sección 8).
+**Estado (20-10-2026, versión 1.10):** está escrito, pero no se ha podido compilar en la sesión de Claude. Puede que al
+compilarlo salga algún error. Si pasa, copiad el texto del error y pasádselo a Claude (ver la sección 8).
 
 **Por defecto solo avisa.** Nunca opera en una cuenta real, salvo que lo activéis a propósito.
 
@@ -50,9 +52,13 @@ MT5 tiene que estar abierto para que el bot funcione. Con el ordenador apagado n
 Un aviso es así:
 
 > BOT CRT · COMPRA NAS100 · tras la apertura · Entrada 21480.5 · Stop 21410.0 · TP 21621.5 · 1 a 2 · 1 % = 0.35 lotes ·
-> Escenario 3 · Hoy: 14:00 FOMC Statement
+> Escenario 3 · Nota B (el 1H va en contra) · Hoy: 14:00 FOMC Statement
 
-Cuando la operación termina, llega otro aviso con el resultado (TP, SL o cierre del viernes) en R.
+- **Nota:** A, sin banderas rojas; B, con una; C, con dos o más. Las banderas son lo que el autor no quiere ver al entrar
+  (ver `ESTRATEGIA.md`). No impiden entrar: sirven para que veáis el riesgo y para que el bot aprenda si importan.
+- Cuando la operación termina, llega otro aviso con el resultado (TP, SL, salida por 1H o cierre del viernes) en R.
+- Si se llega al tope de pérdida del día, llega un aviso (solo uno, aunque el bot esté en los tres gráficos) y ese día ya
+  no avisa de más entradas.
 
 ## 4. Parámetros
 
@@ -73,11 +79,19 @@ Cuando la operación termina, llega otro aviso con el resultado (TP, SL o cierre
 | ColchonStopPuntos | Margen del stop detrás del barrido, en puntos del símbolo. Ver la tabla de abajo. | 30 |
 | DiarioBastaNoRojo | Si está activado, basta con que el diario no vaya en contra. Lo decidido es que vaya a favor. | No |
 | ComprobarObjetivoDiario | No entra si el TP queda más allá del objetivo del diario. | Sí |
+| PerdidaMaxDiaR | Tope de pérdida del día, en R, **sumando todos los mercados** en los que esté puesto el bot (1 R = el 1 % con el riesgo por defecto). Al llegar, ese día ya no entra. 0 = sin tope. | 3 |
+| HoraInicio4H | Hora de Nueva York a la que empiezan las velas de 4H: 17 en MT5 y forex (velas de la 1, las 5 y las 9); 18 en el gráfico de futuros de TradingView (velas de las 2, las 6 y las 10). | 17 |
 | **Reglas candidatas** | Apagadas hasta que el laboratorio las pruebe y el equipo las apruebe. | |
 | StopAEntradaEnR | Al llegar a +X R, el stop pasa a la entrada. 0 = no. | 0 |
 | Vela1Minima | La vela 1 del rango de 4H tiene que ser al menos X veces el tamaño medio de las velas de 4H. 0 = no. | 0 |
 | SinNoticias | No entra los días con noticias fuertes. | No |
 | EscenariosPermitidos | Solo esos escenarios, por ejemplo `1,2`. Vacío = todos. | vacío |
+| Salida1H | Si se forma un rango de 1H en contra: «Salir», o «Stop a la entrada si va ganando; si no, salir». | No |
+| TpEnObjetivo4H | El TP va al objetivo del rango de 4H y no a 1 a Ratio. Si queda a menos de 1 R, no entra. | No |
+| Exigir1H / Exigir3H | Que el 1H (o el 3H) esté a favor, o que al menos no vaya en contra. | No |
+| SoloSinBanderas | Solo situaciones con nota A. | No |
+| PausaTrasStops | Tras tantos stops seguidos, el resto del día y el siguiente sin entrar. 0 = no. | 0 |
+| ToleranciaDiario | Un rango diario que cierra un poco por fuera (hasta esa parte de la vela 1) sigue valiendo, como hace el autor en el gráfico de futuros. 0 = no. | 0 |
 | **Datos y memoria** | | |
 | DesfaseServidorNY | Horas que el reloj del servidor va por delante de Nueva York (ver abajo). | 7 |
 | DiferencialFijoPuntos | 0 = usa el diferencial real del bróker. Con un número, usa siempre ese (sirve para comparar con el Python). | 0 |
@@ -107,7 +121,11 @@ BOT CRT · NAS100 · solo avisa
 Sesgo de fondo: COMPRAS   (semanal: compras · mensual: compras)
 Diario:  compras verde · ventas rojo
 4H:      compras ambar · ventas ambar
+3H:      compras verde · ventas ambar
+1H:      compras ambar · ventas rojo
 Ahora:   se puede entrar (10:20 en Nueva York)
+Hoy:     -1,0 R en este mercado · -2,0 R entre todos (tope: -3 R)
+Racha:   1 stop seguido
 Operación: ninguna
 Fantasmas siguiéndose: 2
 Última señal: 2026-10-20 10:30 · compra · entrada
@@ -117,7 +135,12 @@ Fantasmas siguiéndose: 2
   lunes. Con «sin sesgo» no entra.
 - **Diario y 4H:** el semáforo para compras y para ventas. Para entrar, los dos tienen que estar en verde hacia el lado
   del sesgo.
+- **3H y 1H:** su color, para ver si acompañan. No hace falta que estén en verde (salvo con Exigir1H o Exigir3H), pero
+  si van en contra es una bandera roja.
 - **Ahora:** si en este momento puede entrar, si está esperando tras la apertura o si está fuera de horario.
+- **Hoy:** lo que llevan hoy las operaciones del bot en este mercado y en todos. Cuando se llega al tope pone «TOPE
+  ALCANZADO» y ya no entra hasta el día siguiente. Es el «bloqueador» que recomienda el vídeo de psicología.
+- **Racha:** los stops seguidos. A partir de 3 os aconseja parar un día. Con PausaTrasStops, la pausa la hace él.
 - **Operación:** la que tiene abierta. Si pone «de la historia, sin aviso», es una operación que habría tomado antes
   de arrancar: no se avisó, pero hasta que se cierre no toma otra, igual que la prueba en Python.
 - **Fantasmas:** señales descartadas que sigue para saber qué habría pasado.
@@ -131,6 +154,7 @@ Fantasmas siguiéndose: 2
   - qué decidió y por qué;
   - cómo estaban el sesgo, el diario y el 4H;
   - el escenario y si había noticias fuertes;
+  - cómo estaban el 3H y el 1H, las banderas rojas y la nota (A, B o C);
   - y, cuando se cierra, el resultado, hasta dónde llegó a favor y hasta dónde llegó en contra.
 - Tiene las mismas columnas que la memoria del Python, así que el mismo informe sirve para las dos.
 - **Para que Claude aprenda de ella:** pasadle el archivo (por ejemplo, copiándolo en la carpeta `datos/` del
@@ -150,6 +174,9 @@ Fantasmas siguiéndose: 2
   al arrancar.
 - Si MT5 se desconecta y una señal le llega con más de 20 minutos de retraso, no avisa ni opera, pero la apunta.
 - El viernes a las 17:00 de Nueva York cierra lo que haya abierto.
+- **Tope de pérdida del día:** cada bot deja lo que lleva hoy en una variable global de MT5 (Herramientas → Variables
+  globales, las que empiezan por `BotCRT.`) y suma las de los demás. Así el tope vale para los tres mercados juntos.
+  Cuenta las operaciones del bot, no las que hagáis a mano: esas, apuntadlas en el cuaderno (`cuaderno/`).
 - En el probador de estrategias de MT5 no hay calendario de noticias ni avisos al móvil.
 
 ## 8. Si algo falla al compilar
@@ -158,7 +185,8 @@ Copiad el texto exacto del error (con su número de línea) y pasádselo a Claud
 
 - las funciones del calendario económico (`CalendarValueHistory`, `CalendarEventById`), que piden un MT5 actualizado;
 - `input group`, que también pide un MT5 de los últimos años;
-- el cálculo de lotes (`OrderCalcProfit`) y las órdenes (`CTrade`).
+- el cálculo de lotes (`OrderCalcProfit`) y las órdenes (`CTrade`);
+- las variables globales del tope de pérdida (`GlobalVariableSet`, `GlobalVariableSetOnCondition`).
 
 ## 9. Comprobar que decide igual que el Python
 

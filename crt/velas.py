@@ -2,8 +2,14 @@
 
 Todo va en hora de Nueva York, con su cambio de hora. El día de trading empieza a las 17:00 de
 Nueva York, como en MT5 y en el forex. Por eso las velas de 4H empiezan a las 17, 21, 1, 5, 9 y 13,
-las mismas que usa el autor de la estrategia («la vela de la 1 es Londres, la de las 5 el London
-lunch y la de las 9 Nueva York»).
+las mismas que usa el autor de la estrategia en el quinto vídeo («la vela de la 1 es Londres, la de
+las 5 el London lunch y la de las 9 Nueva York»), y las de 3H a las 17, 20, 23, 2, 5, 8, 11 y 14 («la
+de 3 horas de las 8» del vídeo de los 150.000 $).
+
+En ese mismo vídeo la vela de 4H de la apertura es «la de las 6»: es lo que sale en el gráfico de
+futuros de TradingView, cuyo día empieza a las 18:00 (velas de 4H a las 18, 22, 2, 6, 10 y 14). Por
+eso la hora a la que empiezan las velas de 4H se puede cambiar (inicio_4h) y el laboratorio prueba las
+dos.
 
 Las horas se guardan «de reloj» (sin zona), en hora de Nueva York. Para ordenar se usa siempre el
 orden de llegada de las barras y nunca la hora: en el cambio de hora de otoño la 1:00 se repite.
@@ -58,9 +64,9 @@ def dia_de_trading(hora_ny: datetime) -> date:
     return (hora_ny + DESFASE_DIA).date()
 
 
-def clave_y_fin(marco: str, inicio_ny: datetime) -> tuple[object, datetime]:
+def clave_y_fin(marco: str, inicio_ny: datetime, inicio_4h: int = 17) -> tuple[object, datetime]:
     """A qué vela del marco pertenece una barra que empieza a esta hora y a qué hora de Nueva York
-    cierra esa vela."""
+    cierra esa vela. «inicio_4h» es la hora de Nueva York a la que empieza una vela de 4H."""
     t = inicio_ny + DESFASE_DIA
     if marco == "M15":
         clave = t.replace(minute=t.minute - t.minute % 15, second=0, microsecond=0)
@@ -68,9 +74,14 @@ def clave_y_fin(marco: str, inicio_ny: datetime) -> tuple[object, datetime]:
     elif marco == "H1":
         clave = t.replace(minute=0, second=0, microsecond=0)
         fin = clave + timedelta(hours=1)
+    elif marco == "H3":
+        clave = t.replace(hour=t.hour - t.hour % 3, minute=0, second=0, microsecond=0)
+        fin = clave + timedelta(hours=3)
     elif marco == "H4":
+        desfase = timedelta(hours=24 - inicio_4h)
+        t = inicio_ny + desfase
         clave = t.replace(hour=t.hour - t.hour % 4, minute=0, second=0, microsecond=0)
-        fin = clave + timedelta(hours=4)
+        return clave, clave + timedelta(hours=4) - desfase
     elif marco == "D1":
         clave = datetime(t.year, t.month, t.day)
         fin = clave + timedelta(days=1)

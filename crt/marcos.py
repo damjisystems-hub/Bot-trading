@@ -1,9 +1,10 @@
 """Un marco de tiempo (1H, 4H, diario…) tal como lo ve el bot: sus velas, sus rangos y su semáforo.
 
 El semáforo puede ponerse en verde antes de que cierre la vela grande: si la vela en curso ya ha
-barrido el extremo de la anterior, el precio ha vuelto dentro y el marco menor ha formado un rango a
-favor después del barrido. Es lo que hace el autor al bajar de 4H a 1H «para no esperar a que cierre
-la vela de 4H», y de diario a 4H.
+barrido el extremo de la anterior (sin haber tomado también el otro, porque entonces ya no puede ser
+un rango), el precio ha vuelto dentro y el marco menor ha formado un rango a favor después del
+barrido. Es lo que hace el autor al bajar de 4H a 1H «para no esperar a que cierre la vela de 4H», y
+de diario a 4H.
 """
 
 from __future__ import annotations
@@ -32,9 +33,11 @@ class Setup:
 
 
 class Marco:
-    def __init__(self, nombre: str, menor: Marco | None = None):
+    def __init__(self, nombre: str, menor: Marco | None = None, inicio_4h: int = 17, tolerancia: float = 0.0):
         self.nombre = nombre
         self.menor = menor
+        self.inicio_4h = inicio_4h  # hora de Nueva York a la que empiezan las velas de 4H
+        self.tolerancia = tolerancia  # cierre un poco por fuera que aún cuenta como rango (ver rangos.evaluar)
         self.cerradas: list[Vela] = []  # solo se guardan las últimas
         self.parcial: Vela | None = None  # la vela en curso
         self.clave = None
@@ -47,7 +50,7 @@ class Marco:
 
     def toca_cerrar_antes(self, barra: Vela) -> bool:
         """La barra pertenece a otra vela: hay que cerrar la que está en curso antes de sumarla."""
-        return self.parcial is not None and clave_y_fin(self.nombre, barra.inicio)[0] != self.clave
+        return self.parcial is not None and clave_y_fin(self.nombre, barra.inicio, self.inicio_4h)[0] != self.clave
 
     def toca_cerrar_despues(self, barra: Vela) -> bool:
         """Con esta barra termina la vela en curso."""
@@ -61,7 +64,7 @@ class Marco:
 
     def sumar(self, barra: Vela) -> None:
         if self.parcial is None:
-            self.clave, self.fin = clave_y_fin(self.nombre, barra.inicio)
+            self.clave, self.fin = clave_y_fin(self.nombre, barra.inicio, self.inicio_4h)
             self.parcial = Vela(barra.inicio, barra.apertura, barra.maximo, barra.minimo, barra.cierre, barra.i_inicio, barra.i_fin)
             self.i_barrido = {+1: None, -1: None}
         else:
@@ -80,7 +83,7 @@ class Marco:
         self.eventos = [
             e for e in self.eventos if e.estado == "activo" and (e.velas_desde < MAX_VELAS_EVENTO or e is self.ultimo)
         ]
-        nuevo = evaluar(self.cerradas[-1], vela, self.nombre) if self.cerradas else None
+        nuevo = evaluar(self.cerradas[-1], vela, self.nombre, self.tolerancia) if self.cerradas else None
         if nuevo is not None:
             nuevo.vela1_rel = self._relativo(self.cerradas[-1])
         self.cerradas.append(vela)
@@ -111,11 +114,15 @@ class Marco:
         if e is not None and e.tipo == "rango" and e.estado == "activo" and e.direccion == direccion:
             ids = (e.id, ("anticipo", self.nombre, e.i_vela_inicio, direccion))
             return Setup(ids, direccion, e.barrido, e.objetivo, e.i_formado, "cierre", e.escenario, e.vela1_rel)
+        return self.anticipo(direccion, precio)
+
+    def anticipo(self, direccion: int, precio: float) -> Setup | None:
+        """El rango a favor que está formando la vela en curso, visto con el marco menor, o None."""
         if self.menor is None or self.parcial is None or not self.cerradas:
             return None
         i_barrido = self.i_barrido[direccion]
         previa = self.cerradas[-1]
-        if i_barrido is None or not previa.minimo < precio < previa.maximo:
+        if i_barrido is None or not previa.minimo < precio < previa.maximo or self.tomando(direccion):
             return None
         menor = self.menor.setup(direccion, precio)
         if menor is None or menor.i_inicio < i_barrido:
@@ -133,3 +140,11 @@ class Marco:
         if self.setup(direccion, precio) is not None:
             return "verde"
         return semaforo(self.ultimo, direccion)
+
+    def tomando(self, direccion: int) -> bool:
+        """¿La vela en curso ya ha pasado el extremo de la anterior hacia ese lado? En compras, que está
+        «tomando máximos»: si vuelve a cerrar dentro, forma un rango en contra (vídeo de los stops)."""
+        if self.parcial is None or not self.cerradas:
+            return False
+        previa = self.cerradas[-1]
+        return self.parcial.maximo > previa.maximo if direccion > 0 else self.parcial.minimo < previa.minimo

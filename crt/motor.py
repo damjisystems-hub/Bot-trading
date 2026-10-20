@@ -7,32 +7,35 @@ primero y así la prueba no sale mejor de lo que es.
 Además de operar, apunta en la memoria cada situación que ve: la primera vez que una idea de 4H da
 un order block en horario (se tome o no, y por qué) y cada entrada. Las señales descartadas se siguen
 como operaciones «fantasma» hasta su stop o su TP, para saber qué habría pasado: así se aprende qué
-filtros ayudan y cuáles sobran.
+filtros ayudan y cuáles sobran. Cada situación lleva sus «banderas rojas» (lo que el autor no quiere
+ver al entrar) y una nota: A sin banderas, B con una y C con dos o más.
 
 En cada barra, por este orden:
   1. Si la barra empieza otra semana sin que la anterior cerrara (hueco en los datos), se cierra lo
      abierto donde se quedó el precio, y se cierran las velas que había.
   2. Se mira si algún rango ha llegado a su objetivo y se suma la barra a las velas en curso.
   3. Las operaciones abiertas (la real y las fantasma): ¿tocan el stop o el TP?
-  4. Se cierran las velas que terminan con esta barra; pueden formar rangos nuevos. El viernes a las
-     17:00 se cierra lo que quede abierto.
+  4. Se cierran las velas que terminan con esta barra; pueden formar rangos nuevos. Con la regla
+     candidata de salida por 1H, un rango de 1H en contra cierra la operación (o lleva el stop a la
+     entrada). El viernes a las 17:00 se cierra lo que quede abierto.
   5. Al cierre de la barra, para compras y para ventas: si hay order block con el 4H a favor, se
      comprueba todo lo demás (sesgo, diario, filtros, topes, stop y TP) y se decide.
 """
 
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 
-from .entrada import es_order_block, hora_permitida, sesion
+from .entrada import APERTURA_NY, es_order_block, hora_permitida, sesion
 from .marcos import Marco, Setup
 from .mercados import Mercado
 from .rangos import semaforo
 from .velas import QUINCE_MIN, Vela, dia_de_trading
 
 STOP_MINIMO_EN_DIFERENCIALES = 3  # un stop más corto que esto no es realista: se lo comería el diferencial
+MINIMO_R_OBJETIVO = 1.0  # con el TP en el objetivo del 4H, no se entra si está a menos de esto
 
 # Decisiones. Los mismos textos en la memoria del Python y en la del bot de MT5.
 ENTRADA = "entrada"
@@ -46,6 +49,36 @@ TOPE_DEL_DIA = "tope de operaciones del día"
 PASO_EL_BARRIDO = "el precio ya pasó el barrido"
 STOP_CORTO = "stop demasiado corto"
 TP_NO_CABE = "el TP no cabe antes del objetivo del diario"
+H3_NO_ACOMPANA = "el 3H no acompaña"
+H1_NO_ACOMPANA = "el 1H no acompaña"
+CON_BANDERAS = "situación con banderas rojas"
+OBJETIVO_CERCA = "el objetivo del 4H está a menos de 1 R"
+PAUSA = "pausa tras una racha de stops"
+TOPE_DE_PERDIDA = "tope de pérdida del día"
+DECISIONES = (
+    ENTRADA, SIN_SESGO, DIARIO_EN_CONTRA, YA_ABIERTA, ESCENARIO_NO_PERMITIDO, VELA1_PEQUENA, NOTICIAS,
+    TOPE_DEL_DIA, PASO_EL_BARRIDO, STOP_CORTO, TP_NO_CABE, H3_NO_ACOMPANA, H1_NO_ACOMPANA, CON_BANDERAS,
+    OBJETIVO_CERCA, PAUSA, TOPE_DE_PERDIDA,
+)  # fmt: skip
+
+# Cómo termina una operación.
+SALIDA_1H = "Salida por 1H"
+RESULTADOS = ("TP", "SL", "BE", "Cierre semanal", SALIDA_1H)
+
+# Banderas rojas: lo que el autor no quiere ver al entrar (vídeos de los stops, de los 150.000 $ y de la
+# única vela). No impiden entrar: se apuntan para ver si las que las llevan pierden más.
+B_DIARIO_EN_CONTRA = "el diario va en contra"  # el diario solo está en verde anticipado y lo cerrado va en contra
+B_DIARIO_TOMANDO = {+1: "el diario está tomando máximos", -1: "el diario está tomando mínimos"}
+B_4H_TOMANDO = {+1: "el 4H está tomando máximos", -1: "el 4H está tomando mínimos"}
+B_3H_EN_CONTRA = "el 3H va en contra"
+B_1H_EN_CONTRA = "el 1H va en contra"
+B_ANTES_DE_LA_APERTURA = "justo antes de la apertura"  # de 9:00 a 9:30
+B_LEJOS_DEL_BARRIDO = "entrada lejos del barrido"  # stop más grande que una vela media de 4H: si falla, stop directo
+BANDERAS = (
+    B_DIARIO_EN_CONTRA, *B_DIARIO_TOMANDO.values(), *B_4H_TOMANDO.values(), B_3H_EN_CONTRA, B_1H_EN_CONTRA,
+    B_ANTES_DE_LA_APERTURA, B_LEJOS_DEL_BARRIDO,
+)  # fmt: skip
+MEDIA_HORA_ANTES = time(9, 0)
 
 
 @dataclass
@@ -59,11 +92,20 @@ class Ajustes:
     diario: str = "verde"  # "verde": hace falta un rango diario a favor; "no_rojo": basta con que no vaya en contra; "ignorar": solo para pruebas
     comprobar_objetivo_diario: bool = True  # no entrar si el TP queda más allá del objetivo del diario
     max_operaciones_dia: int = 2  # por mercado
+    perdida_max_dia_r: float | None = 3.0  # al perder tanto en un día (en R) no se entra más ese día; en MT5 suma los tres mercados, aquí solo este
+    inicio_4h: int = 17  # hora de Nueva York a la que empiezan las velas de 4H (17: MT5 y forex; 18: futuros en TradingView)
     # Reglas candidatas: apagadas hasta que el laboratorio demuestre que ayudan y el equipo las apruebe.
     stop_a_entrada_en_r: float | None = None  # al llegar a +X R, el stop pasa a la entrada
     vela1_minima: float | None = None  # el rango de 4H necesita una vela 1 de al menos X veces el tamaño medio
     escenarios: tuple | None = None  # escenarios permitidos (None: todos)
     sin_noticias: bool = False  # no entrar los días con noticias fuertes
+    salida_1h: str | None = None  # si se forma un rango de 1H en contra: "salir" o "entrada" (stop a la entrada si va ganando; si no, salir)
+    tp_objetivo_4h: bool = False  # TP en el objetivo del rango de 4H en vez de a «ratio» veces el riesgo
+    exigir_1h: str | None = None  # el 1H tiene que estar "verde" (rango a favor) o "no_rojo" (no en contra)
+    exigir_3h: str | None = None  # lo mismo con el 3H
+    sin_banderas: bool = False  # solo situaciones sin banderas rojas (nota A)
+    pausa_tras_stops: int | None = None  # tras tantos stops seguidos, el resto del día y el siguiente sin operar
+    tolerancia_diario: float = 0.0  # un rango diario que cierra hasta esta parte de la vela 1 por fuera sigue contando
     sesgo_fijo: int | None = None  # solo para pruebas: +1 compras, -1 ventas
 
 
@@ -82,7 +124,7 @@ class Operacion:
     stop_en_entrada: bool = False
     hora_salida: datetime | None = None
     salida: float | None = None
-    resultado: str = ""  # TP, SL, BE (stop en la entrada) o «Cierre semanal»
+    resultado: str = ""  # TP, SL, BE (stop en la entrada), «Cierre semanal» o «Salida por 1H»
     r: float = 0.0  # resultado en R: +2 es un TP a 1 a 2, -1 un stop
     mfe_r: float = 0.0  # lo más que llegó a ir a favor, en R
     mae_r: float = 0.0  # lo más que llegó a ir en contra, en R
@@ -111,6 +153,14 @@ class Senal:
     objetivo_r: float | None  # cuántos R hay hasta el objetivo del diario
     noticias: str
     operacion: Operacion | None = None
+    h3: str = ""  # color del 3H para esta dirección
+    h1: str = ""  # color del 1H para esta dirección
+    banderas: tuple = ()
+
+    @property
+    def nota(self) -> str:
+        """A: sin banderas rojas; B: con una; C: con dos o más."""
+        return "ABC"[min(len(self.banderas), 2)]
 
 
 @dataclass
@@ -121,6 +171,7 @@ class Foto:
     sesgo: int
     diario: dict  # {+1: color para compras, -1: color para ventas}
     h4: dict
+    h1: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -166,17 +217,21 @@ class _Recorrido:
     def __init__(self, mercado: Mercado, ajustes: Ajustes, noticias: dict):
         self.mercado, self.ajustes, self.noticias = mercado, ajustes, noticias
         self.h1 = Marco("H1")
-        self.h4 = Marco("H4", menor=self.h1)
-        self.d1 = Marco("D1", menor=self.h4)
+        self.h3 = Marco("H3")
+        self.h4 = Marco("H4", menor=self.h1, inicio_4h=ajustes.inicio_4h)
+        self.d1 = Marco("D1", menor=self.h4, tolerancia=ajustes.tolerancia_diario)
         self.w1 = Marco("W1")
         self.mn = Marco("MN")
-        self.marcos = (self.h1, self.h4, self.d1, self.w1, self.mn)
+        self.marcos = (self.h1, self.h3, self.h4, self.d1, self.w1, self.mn)
         self.res = Resultado(mercado, ajustes)
         self.abierta: Operacion | None = None
         self.fantasmas: list[Operacion] = []
         self.usados: set = set()  # ideas que ya dieron su entrada (o se descartaron al intentarla)
         self.vistos: set = set()  # ideas que ya están en la memoria
         self.por_dia: Counter = Counter()
+        self.r_por_dia: defaultdict = defaultdict(float)  # resultado de las operaciones cerradas cada día
+        self.racha = 0  # stops seguidos de las operaciones tomadas
+        self.pausa_hasta: date | None = None
         self.anterior: Vela | None = None
 
     def paso(self, barra: Vela) -> None:
@@ -190,7 +245,7 @@ class _Recorrido:
             self._cerrar_todo(anterior.inicio + QUINCE_MIN, anterior.cierre)
         for m in self.marcos:
             if m.toca_cerrar_antes(barra):
-                m.cerrar()
+                self._cerrar(m, anterior.inicio + QUINCE_MIN, anterior.cierre)
 
         # 2.
         for m in self.marcos:
@@ -199,16 +254,15 @@ class _Recorrido:
 
         # 3.
         if self.abierta is not None and _revisar_salida(self.abierta, barra, self.mercado, self.ajustes):
-            res.operaciones.append(self.abierta)
-            self.abierta = None
+            self._cerrada(self.abierta)
         self.fantasmas = [op for op in self.fantasmas if not _revisar_salida(op, barra, self.mercado, self.ajustes)]
 
         # 4.
+        hora = barra.inicio + QUINCE_MIN
         fin_de_semana = self.w1.toca_cerrar_despues(barra)
         for m in self.marcos:
             if m.toca_cerrar_despues(barra):
-                m.cerrar()
-        hora = barra.inicio + QUINCE_MIN
+                self._cerrar(m, hora, barra.cierre)
         if fin_de_semana:
             self._cerrar_todo(hora, barra.cierre)
         if hora.minute == 0:
@@ -242,6 +296,11 @@ class _Recorrido:
             return
         precio = barra.cierre
         setup = self.h4.setup(d, precio)
+        if setup is not None and setup.via == "cierre" and any(i in self.usados for i in setup.ids):
+            # La idea de 4H ya dio su entrada. Si la vela en curso está formando otro rango a favor (por
+            # ejemplo, tras barrer el stop), es una idea nueva: «me saca, reacciona, vuelve a hacer un
+            # rango de 4H y un order block… y vuelvo a entrar» (vídeo de los stops).
+            setup = self.h4.anticipo(d, precio)
         if setup is None or barra.i_fin <= setup.i_inicio:
             return
         if any(i in self.usados for i in setup.ids):
@@ -259,7 +318,9 @@ class _Recorrido:
         if a.diario == "ignorar":
             objetivo = None
 
-        niveles = _niveles(d, precio, setup, self.mercado, a.ratio)
+        niveles = _niveles(d, precio, setup, self.mercado, a.ratio, a.tp_objetivo_4h)
+        colores = {"h3": self.h3.color(d, precio), "h1": self.h1.color(d, precio)}
+        banderas = self._banderas(d, hora, colores, niveles)
         if self._sesgo() != d:
             decision = SIN_SESGO
         elif not diario_vale:
@@ -268,7 +329,7 @@ class _Recorrido:
             decision = YA_ABIERTA
         else:
             self.usados.update(setup.ids)  # solo cuenta el primer order block de cada idea
-            decision = self._filtros(setup, hora)
+            decision = self._filtros(setup, hora, colores, banderas)
             if decision is None:
                 if isinstance(niveles, str):
                     decision = niveles
@@ -293,21 +354,52 @@ class _Recorrido:
                 self.fantasmas.append(operacion)
         if decision != ENTRADA:
             self.res.descartadas[decision] += 1
-        self.res.senales.append(self._senal(hora, d, decision, color_diario, diario, setup, objetivo, operacion))
+        self.res.senales.append(self._senal(hora, d, decision, color_diario, diario, setup, objetivo, operacion, colores, banderas))
 
-    def _filtros(self, setup: Setup, hora: datetime) -> str | None:
+    def _banderas(self, d: int, hora: datetime, colores: dict, niveles) -> tuple:
+        """Las banderas rojas de esta situación (ver BANDERAS)."""
+        banderas = []
+        if semaforo(self.d1.ultimo, d) == "rojo":
+            banderas.append(B_DIARIO_EN_CONTRA)
+        if self.d1.tomando(d):
+            banderas.append(B_DIARIO_TOMANDO[d])
+        if self.h4.tomando(d):
+            banderas.append(B_4H_TOMANDO[d])
+        if colores["h3"] == "rojo":
+            banderas.append(B_3H_EN_CONTRA)
+        if colores["h1"] == "rojo":
+            banderas.append(B_1H_EN_CONTRA)
+        if MEDIA_HORA_ANTES < hora.time() <= APERTURA_NY:
+            banderas.append(B_ANTES_DE_LA_APERTURA)
+        medio = self.h4.rango_medio()
+        if not isinstance(niveles, str) and medio and niveles[2] > medio:
+            banderas.append(B_LEJOS_DEL_BARRIDO)
+        return tuple(banderas)
+
+    def _filtros(self, setup: Setup, hora: datetime, colores: dict, banderas: tuple) -> str | None:
         a = self.ajustes
+        dia = dia_de_trading(hora - QUINCE_MIN)
         if a.escenarios is not None and setup.escenario not in a.escenarios:
             return ESCENARIO_NO_PERMITIDO
         if a.vela1_minima is not None and (setup.vela1_rel is None or setup.vela1_rel < a.vela1_minima):
             return VELA1_PEQUENA
         if a.sin_noticias and self.noticias.get(hora.date()):
             return NOTICIAS
-        if self.por_dia[dia_de_trading(hora - QUINCE_MIN)] >= a.max_operaciones_dia:
+        if a.exigir_3h and not _acompana(colores["h3"], a.exigir_3h):
+            return H3_NO_ACOMPANA
+        if a.exigir_1h and not _acompana(colores["h1"], a.exigir_1h):
+            return H1_NO_ACOMPANA
+        if a.sin_banderas and banderas:
+            return CON_BANDERAS
+        if self.pausa_hasta is not None and dia <= self.pausa_hasta:
+            return PAUSA
+        if a.perdida_max_dia_r is not None and self.r_por_dia.get(dia, 0.0) <= -a.perdida_max_dia_r:
+            return TOPE_DE_PERDIDA
+        if self.por_dia[dia] >= a.max_operaciones_dia:
             return TOPE_DEL_DIA
         return None
 
-    def _senal(self, hora, d, decision, color_diario, diario, setup, objetivo, op) -> Senal:
+    def _senal(self, hora, d, decision, color_diario, diario, setup, objetivo, op, colores, banderas) -> Senal:
         medio = self.h4.rango_medio()
         stop_rel = op.riesgo / medio if op is not None and medio else None
         objetivo_r = (objetivo - op.entrada) * d / op.riesgo if op is not None and objetivo is not None else None
@@ -327,14 +419,54 @@ class _Recorrido:
             objetivo_r,
             " | ".join(self.noticias.get(hora.date(), [])),
             op,
+            colores["h3"],
+            colores["h1"],
+            banderas,
         )
 
-    # ───────────────────────── Fotos y cierres ─────────────────────────
+    # ───────────────────────── Fotos, cierres y salidas ─────────────────────────
 
     def _foto(self, hora: datetime, precio: float) -> None:
         self.res.fotos.append(
-            Foto(hora, self._sesgo(), {d: self.d1.color(d, precio) for d in (+1, -1)}, {d: self.h4.color(d, precio) for d in (+1, -1)})
+            Foto(
+                hora,
+                self._sesgo(),
+                {d: self.d1.color(d, precio) for d in (+1, -1)},
+                {d: self.h4.color(d, precio) for d in (+1, -1)},
+                {d: self.h1.color(d, precio) for d in (+1, -1)},
+            )
         )
+
+    def _cerrar(self, m: Marco, hora: datetime, cierre: float) -> None:
+        """Cierra la vela en curso de un marco. Con la regla candidata de salida por 1H, si al cerrar la
+        vela de 1H se forma un rango en contra de una operación, la cierra o le lleva el stop a la entrada
+        («cuando veo esto, tengo que poner break even y no comerme el stop», vídeo de los stops)."""
+        nuevo = m.cerrar()
+        if m is not self.h1 or not self.ajustes.salida_1h or nuevo is None or nuevo.tipo != "rango":
+            return
+        if self.abierta is not None and nuevo.direccion == -self.abierta.direccion and self._salida_1h(self.abierta, hora, cierre):
+            self._cerrada(self.abierta)
+        self.fantasmas = [op for op in self.fantasmas if not (nuevo.direccion == -op.direccion and self._salida_1h(op, hora, cierre))]
+
+    def _salida_1h(self, op: Operacion, hora: datetime, cierre: float) -> bool:
+        """Devuelve True si la operación se cierra."""
+        precio = _precio_de_salida(op, cierre, self.mercado)
+        if self.ajustes.salida_1h == "entrada" and (precio - op.entrada) * op.direccion > 0:
+            op.stop, op.stop_en_entrada = op.entrada, True  # vale desde la barra siguiente
+            return False
+        _salir(op, hora, precio, SALIDA_1H)
+        return True
+
+    def _cerrada(self, op: Operacion) -> None:
+        """La operación real se ha cerrado: se guarda y se lleva la cuenta del día y de la racha de stops."""
+        self.res.operaciones.append(op)
+        self.abierta = None
+        dia = dia_de_trading(op.hora_salida - QUINCE_MIN)
+        self.r_por_dia[dia] += op.r
+        self.racha = self.racha + 1 if op.r < 0 else 0
+        n = self.ajustes.pausa_tras_stops
+        if n and self.racha >= n:
+            self.pausa_hasta, self.racha = _siguiente_dia_habil(dia), 0
 
     def _cerrar_todo(self, hora: datetime, cierre: float) -> None:
         """Cierra lo abierto (la real y las fantasma) al precio de cierre: fin de semana o hueco."""
@@ -342,12 +474,22 @@ class _Recorrido:
             if op is not None:
                 _salir(op, hora, _precio_de_salida(op, cierre, self.mercado), "Cierre semanal")
         if self.abierta is not None:
-            self.res.operaciones.append(self.abierta)
-            self.abierta = None
+            self._cerrada(self.abierta)
         self.fantasmas = []
 
 
-def _niveles(d: int, precio: float, setup: Setup, mercado: Mercado, ratio: float):
+def _acompana(color: str, exigencia: str) -> bool:
+    return color == "verde" if exigencia == "verde" else color != "rojo"
+
+
+def _siguiente_dia_habil(dia: date) -> date:
+    siguiente = dia + timedelta(days=1)
+    while siguiente.weekday() >= 5:
+        siguiente += timedelta(days=1)
+    return siguiente
+
+
+def _niveles(d: int, precio: float, setup: Setup, mercado: Mercado, ratio: float, tp_objetivo: bool = False):
     """Entrada, stop, riesgo y TP, o el motivo por el que no se pueden poner."""
     if d > 0:
         if precio <= setup.barrido:
@@ -363,7 +505,13 @@ def _niveles(d: int, precio: float, setup: Setup, mercado: Mercado, ratio: float
         riesgo = stop - entrada
     if riesgo <= 0 or riesgo < STOP_MINIMO_EN_DIFERENCIALES * mercado.diferencial:
         return STOP_CORTO
-    return entrada, stop, riesgo, entrada + d * ratio * riesgo
+    if not tp_objetivo:
+        return entrada, stop, riesgo, entrada + d * ratio * riesgo
+    # Regla candidata: el TP en el objetivo del rango de 4H («en fondeo solo voy a por los primeros objetivos»).
+    tp = setup.objetivo if d > 0 else setup.objetivo + mercado.diferencial
+    if (tp - entrada) * d < MINIMO_R_OBJETIVO * riesgo:
+        return OBJETIVO_CERCA
+    return entrada, stop, riesgo, tp
 
 
 def _cabe(d: int, tp: float, objetivo: float | None, mercado: Mercado) -> bool:

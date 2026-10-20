@@ -32,6 +32,24 @@ class QueFormaLaVela2(unittest.TestCase):
         self.assertIsNone(evaluar(V1, vela(105, 112, 97, 104), "H4"))
 
 
+class CierreUnPocoFuera(unittest.TestCase):
+    """Regla candidata del diario: el autor da por bueno un rango que cierra muy poco por fuera."""
+
+    def test_sin_tolerancia_es_una_ruptura(self):
+        self.assertEqual(evaluar(V1, vela(105, 105, 98, 99.5), "D1").tipo, "ruptura")
+
+    def test_con_tolerancia_sigue_siendo_un_rango(self):
+        # La vela 1 mide 10; con el 10 %, cerrar hasta 1 punto por debajo de 100 aún vale.
+        e = evaluar(V1, vela(105, 105, 98, 99.5), "D1", tolerancia=0.1)
+        self.assertEqual((e.tipo, e.direccion, e.objetivo, e.barrido), ("rango", +1, 110, 98))
+        self.assertEqual(evaluar(V1, vela(105, 105, 98, 98.5), "D1", tolerancia=0.1).tipo, "ruptura")  # demasiado fuera
+        e = evaluar(V1, vela(105, 111.5, 104, 110.8), "D1", tolerancia=0.1)
+        self.assertEqual((e.tipo, e.direccion, e.barrido), ("rango", -1, 111.5))
+
+    def test_si_toma_los_dos_lados_y_cierra_fuera_sigue_siendo_ruptura(self):
+        self.assertEqual(evaluar(V1, vela(105, 111, 99, 110.5), "D1", tolerancia=0.1).tipo, "ruptura")
+
+
 class VidaDeUnRango(unittest.TestCase):
     def test_se_completa_al_tocar_el_objetivo(self):
         e = evaluar(V1, vela(105, 105, 97, 103), "H4")

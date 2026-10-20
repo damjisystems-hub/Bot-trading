@@ -1,4 +1,5 @@
 import unittest
+from dataclasses import replace
 
 from crt.marcos import Marco
 from crt.motor import Ajustes, Operacion, _revisar_salida, probar, sesgo_de_fondo
@@ -144,6 +145,129 @@ class AnticipoCon1H(unittest.TestCase):
         self.assertEqual((op.hora_entrada, op.via, op.resultado), (ny("2025-03-04 08:30"), "anticipo", "TP"))
         self.assertAlmostEqual(op.stop, 98.5)
         self.assertAlmostEqual(op.tp, 101.6 + 2 * 3.1)
+
+    def test_no_anticipa_si_la_vela_de_4h_ya_tomo_el_otro_extremo(self):
+        # Lo mismo, pero antes de barrer el 100 la vela de las 5 sube a 111 y toma el máximo de la
+        # anterior (110): ya no puede cerrar como rango alcista, así que el 4H no se pone en verde.
+        puntos = HASTA_LAS_9[:5] + [("2025-03-04 05:30", 111)] + self.PUNTOS[5:]
+        self.assertEqual(probar(camino(puntos), SIN_COSTES, SOLO_4H).operaciones, [])
+
+
+SUBE = HASTA_LAS_9 + ORDER_BLOCK_9_30 + [("2025-03-04 11:00", 125)]
+
+
+class Banderas(unittest.TestCase):
+    def test_apunta_las_banderas_rojas_y_la_nota(self):
+        # La vela de 3H de las 5 cierra a las 8:00 por debajo de la anterior (ruptura bajista) y la
+        # entrada es a las 9:30, justo antes de la apertura.
+        s = probar(camino(SUBE), SIN_COSTES, SOLO_4H).senales[0]
+        self.assertEqual(s.banderas, ("el 3H va en contra", "justo antes de la apertura"))
+        self.assertEqual((s.h3, s.h1, s.nota), ("rojo", "ambar", "C"))
+
+    def test_solo_situaciones_sin_banderas(self):
+        res = probar(camino(SUBE), SIN_COSTES, replace(SOLO_4H, sin_banderas=True))
+        self.assertEqual(res.operaciones, [])
+        self.assertEqual(res.descartadas["situación con banderas rojas"], 1)
+
+
+class ExigirElMarcoMenor(unittest.TestCase):
+    def test_el_1h(self):
+        # A las 9:30 el 1H está en ámbar: no está a favor, pero tampoco en contra.
+        res = probar(camino(SUBE), SIN_COSTES, replace(SOLO_4H, exigir_1h="verde"))
+        self.assertEqual(res.descartadas["el 1H no acompaña"], 1)
+        self.assertEqual(len(probar(camino(SUBE), SIN_COSTES, replace(SOLO_4H, exigir_1h="no_rojo")).operaciones), 1)
+
+    def test_el_3h(self):
+        res = probar(camino(SUBE), SIN_COSTES, replace(SOLO_4H, exigir_3h="verde"))
+        self.assertEqual(res.descartadas["el 3H no acompaña"], 1)
+
+
+class SalidaPor1H(unittest.TestCase):
+    # Compra a 104 con el stop en 97 (1 R = 7). La vela de 1H de las 11 sube a 111 y cierra a 108,
+    # dentro de la de las 10 (106-110): rango bajista de 1H a las 12:00. Después cae a 95.
+    GANANDO = HASTA_LAS_9 + ORDER_BLOCK_9_30 + [
+        ("2025-03-04 10:00", 106),
+        ("2025-03-04 11:00", 110),
+        ("2025-03-04 11:30", 111),
+        ("2025-03-04 12:00", 108),
+        ("2025-03-04 13:00", 95),
+    ]
+    # La vela de 1H de las 9 sube a 106 y cierra a 102,8, dentro de la de las 8 (97-103): rango
+    # bajista de 1H a las 10:00, con la operación perdiendo.
+    PERDIENDO = HASTA_LAS_9 + ORDER_BLOCK_9_30 + [("2025-03-04 09:45", 106), ("2025-03-04 10:00", 102.8), ("2025-03-04 11:00", 95)]
+
+    def _op(self, puntos, salida):
+        return probar(camino(puntos), SIN_COSTES, replace(SOLO_4H, salida_1h=salida)).operaciones[0]
+
+    def test_sin_la_regla_acaba_en_stop(self):
+        self.assertEqual(self._op(self.GANANDO, None).resultado, "SL")
+
+    def test_salir_al_formarse_el_rango_en_contra(self):
+        op = self._op(self.GANANDO, "salir")
+        self.assertEqual((op.resultado, op.hora_salida), ("Salida por 1H", ny("2025-03-04 12:00")))
+        self.assertAlmostEqual(op.r, 4 / 7)
+
+    def test_stop_a_la_entrada_si_va_ganando(self):
+        op = self._op(self.GANANDO, "entrada")
+        self.assertEqual((op.resultado, round(op.r, 6)), ("BE", 0.0))
+
+    def test_si_va_perdiendo_sale(self):
+        op = self._op(self.PERDIENDO, "entrada")
+        self.assertEqual((op.resultado, op.hora_salida), ("Salida por 1H", ny("2025-03-04 10:00")))
+        self.assertAlmostEqual(op.r, -1.2 / 7)
+
+
+class TpEnElObjetivoDe4H(unittest.TestCase):
+    def test_el_tp_va_al_objetivo_del_rango(self):
+        # La vela 1 sube hasta 120: el objetivo del rango de 4H está a 16 puntos de la entrada (2,3 R).
+        puntos = [(t, 120 if t == "2025-03-04 02:00" else p) for t, p in HASTA_LAS_9] + ORDER_BLOCK_9_30 + [("2025-03-04 11:00", 125)]
+        op = probar(camino(puntos), SIN_COSTES, replace(SOLO_4H, tp_objetivo_4h=True)).operaciones[0]
+        self.assertEqual((op.tp, op.resultado), (120, "TP"))
+        self.assertAlmostEqual(op.r, 16 / 7)
+
+    def test_no_entra_si_el_objetivo_esta_a_menos_de_1_r(self):
+        # El objetivo (110) está a 6 puntos y 1 R son 7.
+        res = probar(camino(SUBE), SIN_COSTES, replace(SOLO_4H, tp_objetivo_4h=True))
+        self.assertEqual(res.operaciones, [])
+        self.assertEqual(res.descartadas["el objetivo del 4H está a menos de 1 R"], 1)
+
+
+class VolverAEntrarTrasUnStop(unittest.TestCase):
+    # La compra de las 9:30 acaba en stop (97). La vela de 4H de las 9 barre el mínimo de la de las 5
+    # y en 1H la vela de las 11 barre el mínimo de la de las 10 y cierra dentro: se está formando otro
+    # rango alcista de 4H. Order block a las 12:30 y segunda compra («me saca, reacciona, vuelve a
+    # hacer un rango de 4H, un order block… y vuelvo a entrar», vídeo de los stops).
+    PUNTOS = HASTA_LAS_9 + ORDER_BLOCK_9_30 + [
+        ("2025-03-04 10:00", 100),
+        ("2025-03-04 10:30", 96),
+        ("2025-03-04 11:00", 98),
+        ("2025-03-04 11:30", 95.5),
+        ("2025-03-04 12:00", 99),
+        ("2025-03-04 12:15", 98.7),
+        ("2025-03-04 12:30", 99.8),
+        ("2025-03-04 14:00", 110),
+    ]
+
+    def _res(self, **cambios):
+        return probar(camino(self.PUNTOS), SIN_COSTES, replace(SOLO_4H, **cambios))
+
+    def test_vuelve_a_entrar_con_la_idea_nueva(self):
+        ops = self._res().operaciones
+        self.assertEqual(
+            [(o.hora_entrada, o.via, o.resultado) for o in ops],
+            [(ny("2025-03-04 09:30"), "cierre", "SL"), (ny("2025-03-04 12:30"), "anticipo", "TP")],
+        )
+        self.assertAlmostEqual(ops[1].stop, 95.5)
+
+    def test_tope_de_perdida_del_dia(self):
+        res = self._res(perdida_max_dia_r=1.0)
+        self.assertEqual(len(res.operaciones), 1)
+        self.assertEqual(res.descartadas["tope de pérdida del día"], 1)
+
+    def test_pausa_tras_una_racha_de_stops(self):
+        res = self._res(pausa_tras_stops=1)
+        self.assertEqual(len(res.operaciones), 1)
+        self.assertEqual(res.descartadas["pausa tras una racha de stops"], 1)
 
 
 class CierreDelViernes(unittest.TestCase):
