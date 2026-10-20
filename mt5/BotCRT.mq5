@@ -27,7 +27,7 @@
 //
 // Si cambias una regla aquí, cámbiala también en crt/ (y al revés): los dos tienen que decidir igual.
 #property copyright   "Damji Systems"
-#property version     "1.13"
+#property version     "1.14"
 #property description "Bot CRT: avisa de las entradas de la estrategia CRT y apunta la memoria."
 #property description "Por defecto solo avisa. No opera en cuentas reales."
 
@@ -55,6 +55,14 @@ enum Exigencia
    EXIGIR_NO_ROJO = 2   // Que no vaya en contra (no rojo)
   };
 
+enum SesgoEquipo
+  {
+   SESGO_DEL_BOT  = 0,  // El que calcula el bot
+   SESGO_COMPRAS  = 1,  // Compras
+   SESGO_VENTAS   = 2,  // Ventas
+   SESGO_NINGUNO  = 3   // Ninguno: esta semana no entra
+  };
+
 input group "Qué hace el bot"
 input ModoBot  Modo                     = SOLO_AVISOS;  // Modo
 input bool     PermitirCuentaReal       = false;        // Permitir operar en cuenta real (¡peligro!)
@@ -62,6 +70,7 @@ input double   RiesgoPct                = 1.0;          // Riesgo por operación
 input string   NombreMercado            = "";           // Nombre del mercado (vacío = el del símbolo)
 
 input group "Reglas"
+input SesgoEquipo SesgoDeLaSemana       = SESGO_DEL_BOT; // Sesgo de la semana (lo confirmáis o lo cambiáis cada lunes)
 input double   Ratio                    = 2.0;          // TP: veces lo que se arriesga (1 a 2)
 input int      EsperaAperturaMin        = 45;           // Minutos sin entrar tras la apertura de las 9:30 (NY)
 input string   HoraDesde                = "01:00";      // Entradas desde (hora de Nueva York)
@@ -1377,13 +1386,24 @@ bool EsOrderBlock(const Vela &anterior, const Vela &actual, const int dir)
   }
 
 // Manda el semanal; si no dice nada, el mensual. Si se contradicen, no hay sesgo y no se opera.
-int SesgoDeFondo(void)
+int SesgoDelBot(void)
   {
    int s = g_w1.DireccionUltimo();
    int m = g_mn.DireccionUltimo();
    if(s == 0)
       return m;
    return (m == -s) ? 0 : s;
+  }
+
+// El sesgo con el que entra: el del bot o, en directo, el que haya puesto el equipo el lunes (decidido el
+// 19-10-2026: el bot lo calcula y el equipo lo confirma). La historia se repasa siempre con el del bot.
+int SesgoDeFondo(void)
+  {
+   if(!g_en_vivo || SesgoDeLaSemana == SESGO_DEL_BOT)
+      return SesgoDelBot();
+   if(SesgoDeLaSemana == SESGO_COMPRAS)
+      return 1;
+   return (SesgoDeLaSemana == SESGO_VENTAS) ? -1 : 0;
   }
 
 int OperacionesDelDia(const long dia) { return dia == g_dia_ops ? g_ops_dia : 0; }
@@ -2398,6 +2418,8 @@ void ActualizarPanel(void)
    string t = "BOT CRT · " + g_mercado + " · " + TextoModo() + "\n";
    t += "Sesgo de fondo: " + sesgo_texto + "   (semanal: " + TextoDireccion(g_w1.DireccionUltimo())
         + " · mensual: " + TextoDireccion(g_mn.DireccionUltimo()) + ")\n";
+   if(SesgoDeLaSemana != SESGO_DEL_BOT)
+      t += "   Puesto por vosotros. El bot calcula: " + TextoDireccion(SesgoDelBot()) + "\n";
    t += "Diario:  compras " + TextoColor(g_d1.ColorSemaforo(1, precio)) + " · ventas " + TextoColor(g_d1.ColorSemaforo(-1, precio)) + "\n";
    t += "4H:      compras " + TextoColor(g_h4.ColorSemaforo(1, precio)) + " · ventas " + TextoColor(g_h4.ColorSemaforo(-1, precio)) + "\n";
    t += "3H:      compras " + TextoColor(g_h3.ColorSemaforo(1, precio)) + " · ventas " + TextoColor(g_h3.ColorSemaforo(-1, precio)) + "\n";

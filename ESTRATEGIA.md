@@ -31,6 +31,7 @@ Si cambia una regla, se cambia aquí, en el código y en su prueba automática.
 
 - **Las fechas de los casos del examen** que no la tienen, y confirmar las deducidas (ver `casos/casos.csv`).
 - **El riesgo y el tope del día en las cuentas de futuros**, antes de llegar a esa fase (ver «Disciplina»).
+- **Cuándo se pasa de la demo a la cuenta propia** (el autor recomienda al menos 3 meses, unas 60 sesiones).
 
 ## Horario
 

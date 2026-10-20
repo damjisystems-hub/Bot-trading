@@ -17,6 +17,7 @@ Bot de trading con la estrategia CRT («Candle Range Theory») para el NASDAQ, e
   examen y la disciplina de los vídeos de psicología y de cuentas.
 - **Falta la prueba con datos reales del pasado**, porque faltan los datos (ver «Datos»).
 - El bot de MT5 está escrito, pero no se ha podido compilar aquí: hay que compilarlo en MetaEditor (ver `mt5/LEEME.md`).
+- **Para empezar en demo:** `mt5/LEEME.md`, sección 0 (paso a paso y la rutina de cada semana).
 - No opera con dinero real.
 
 - Las reglas exactas: [ESTRATEGIA.md](ESTRATEGIA.md).

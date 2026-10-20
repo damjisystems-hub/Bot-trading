@@ -9,10 +9,64 @@
 - **Os frena** (vídeo de psicología): con el tope de pérdida del día entre todos los mercados, deja de avisar y os
   dice que cerréis el gráfico.
 
-**Estado (20-10-2026, versión 1.13):** está escrito, pero no se ha podido compilar en la sesión de Claude. Puede que al
+**Estado (20-10-2026, versión 1.14):** está escrito, pero no se ha podido compilar en la sesión de Claude. Puede que al
 compilarlo salga algún error. Si pasa, copiad el texto del error y pasádselo a Claude (ver la sección 8).
 
 **Por defecto solo avisa.** Nunca opera en una cuenta real, salvo que lo activéis a propósito.
+
+## 0. Empezar en demo, paso a paso
+
+Nada de dinero real. El bot no va a ser perfecto el primer día. Lo que sí se puede hacer es comprobarlo por partes antes
+de fiarse de él. Por este orden:
+
+1. **Una cuenta demo de MT5.**
+   - Hace falta un bróker con MT5 y los cuatro mercados: NASDAQ (NAS100, US100 o USTEC), EURUSD, GBPUSD y XAUUSD. Por
+     ejemplo Axi, que es el que usa el autor para su cuenta propia en el curso desde 0, aunque cualquiera con MT5 sirve.
+   - Abridla con el dinero que pensáis poner después en la cuenta propia: así los lotes y las pérdidas se ven de verdad.
+   - Comprobad la hora del servidor: cuando en Nueva York son las 9:30, el reloj de «Observación de mercado» tiene que
+     marcar las 16:30. Si marca otra hora, cambiad DesfaseServidorNY (sección 4).
+2. **MT5 en el ordenador.** Se descarga de la web oficial, metatrader5.com. Tiene versión para Mac, con MetaEditor
+   dentro. Entrad con la cuenta demo.
+3. **Instalar y compilar el bot** (sección 1). Hasta que no compile con 0 errores, no funciona. Si sale algún error,
+   copiad el texto y pasádselo a Claude: lo arregla y os da el archivo nuevo.
+4. **Exportar la historia y pasársela a Claude** (`README.md`, «Datos»): barras de M1 o de M15 de los cuatro mercados,
+   todos los meses que dé el bróker. Con eso Claude hace:
+   - la primera prueba con datos reales del pasado (todavía no hay ninguna);
+   - el examen con las situaciones de los vídeos;
+   - la comparación con lo que decide el bot de MT5 (sección 9), para asegurar que los dos deciden igual.
+5. **Verlo funcionar con el pasado (opcional).** En MT5: Ver → Probador de estrategias. Elegid BotCRT, el símbolo, M15,
+   unas semanas de fechas y «Visualización». Se ve cómo marca entradas, stops y TP sobre el gráfico. En el probador no
+   hay noticias ni avisos al móvil.
+6. **Ponerlo en los cuatro gráficos** (sección 2). Cambiad solo esto; lo demás, como viene:
+
+   | Parámetro | NASDAQ | EUR/USD | GBP/USD | Oro |
+   |---|---|---|---|---|
+   | Modo | Operar en una cuenta demo | igual | igual | igual |
+   | NombreMercado | NASDAQ | EUR/USD | GBP/USD | Oro (XAU/USD) |
+   | ColchonStopPuntos | 30 (precio con 1 decimal) o 300 (con 2) | 10 | 15 | 50 |
+   | ExportarNoticias | Sí, la primera vez | No | No | No |
+
+   - En la pestaña «Común», marcad «Permitir trading algorítmico». Arriba en MT5, el botón «Trading algorítmico» tiene
+     que estar en verde.
+   - El riesgo (1 %) y el tope del día (3 R) ya vienen puestos, como está decidido. PermitirCuentaReal, siempre «No».
+   - Las reglas candidatas, apagadas: solo se encienden si el laboratorio las aprueba y lo decidís vosotros.
+7. **Avisos al móvil** (sección 3).
+8. **El ordenador, encendido de 7:00 a 19:00 (hora de España)**, con MT5 abierto y sin que entre en reposo. Si se
+   duerme o se apaga, el bot no ve nada. Si no puede quedarse encendido, MetaQuotes alquila servidores (VPS) donde
+   dejarlo funcionando, pero son de pago: decididlo antes.
+
+**La rutina:**
+
+- **Los lunes, antes de Londres:** mirad en el panel el sesgo que calcula el bot en cada mercado. Si estáis de acuerdo,
+  no toquéis nada. Si no, ponedlo en SesgoDeLaSemana (botón derecho en el gráfico → Asesores expertos → Propiedades →
+  Parámetros de entrada). El lunes siguiente, volved a «El que calcula el bot» o ponedlo otra vez.
+- **Cada día:** los avisos llegan solos. **No toquéis las operaciones del bot**, ni el stop ni el TP, ni las cerréis a
+  mano: lo que se está midiendo es el bot. Si operáis vosotros a mano, apuntadlo en el cuaderno (`cuaderno/`).
+- **Los viernes por la tarde:** pasadle a Claude las memorias (`MQL5/Files/BotCRT/memoria_*.csv`) y el cuaderno. Claude
+  os da el informe: qué gana, qué pierde, qué banderas importan, qué habría pasado con las descartadas y la psicología.
+- **Las reglas no se cambian a mitad:** solo con el laboratorio y vuestra aprobación.
+- **Cuánto tiempo:** el autor recomienda al menos 3 meses de demo (unas 60 sesiones). Cuándo se pasa a la cuenta
+  propia lo decidís vosotros.
 
 ## 1. Instalarlo (una vez)
 
@@ -73,6 +127,7 @@ Un aviso es así:
 | RiesgoPct | Lo que se arriesga en cada operación, en % del balance. Sirve para calcular los lotes. | 1 |
 | NombreMercado | El nombre que sale en los avisos y en la memoria. Vacío = el del símbolo. Para que coincida con el Python: NASDAQ, EUR/USD, GBP/USD u Oro (XAU/USD). | vacío |
 | **Reglas** | | |
+| SesgoDeLaSemana | El sesgo con el que entra: «El que calcula el bot», «Compras», «Ventas» o «Ninguno» (esa semana no entra). Es lo que confirmáis o cambiáis cada lunes. Solo vale para lo que pasa desde que lo ponéis; la historia la repasa siempre con el del bot. | El que calcula el bot |
 | Ratio | El TP está a tantas veces lo que se arriesga. | 2 |
 | EsperaAperturaMin | Minutos sin entrar después de la apertura de las 9:30 de Nueva York. | 45 |
 | HoraDesde / HoraHasta | Horario de entradas, en hora de Nueva York. | 01:00 / 13:00 |
@@ -148,7 +203,8 @@ Fantasmas siguiéndose: 2
 ```
 
 - **Sesgo de fondo:** lo que el bot calcula con el semanal y el mensual. Es lo que tenéis que confirmar o cambiar cada
-  lunes. Con «sin sesgo» no entra.
+  lunes (con SesgoDeLaSemana; entonces el panel dice «Puesto por vosotros» y lo que calcula el bot). Con «sin sesgo» no
+  entra.
 - **Diario y 4H:** el semáforo para compras y para ventas. Para entrar, los dos tienen que estar en verde hacia el lado
   del sesgo.
 - **3H y 1H:** su color, para ver si acompañan. No hace falta que estén en verde (salvo con Exigir1H o Exigir3H), pero
