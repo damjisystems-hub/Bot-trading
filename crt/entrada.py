@@ -21,7 +21,9 @@ def fin_de_la_espera(espera_min: int) -> time:
     return (datetime.combine(date(2000, 1, 1), APERTURA_NY) + timedelta(minutes=espera_min)).time()
 
 
-def hora_permitida(hora: datetime, desde: time, hasta: time, espera_min: int, solo_tras_apertura: bool) -> bool:
+def hora_permitida(
+    hora: datetime, desde: time, hasta: time, espera_min: int, solo_tras_apertura: bool, solo_londres: bool = False
+) -> bool:
     """¿Puede entrar el bot al cierre de una barra que termina a esta hora?
 
     Entradas de «desde» a «hasta», y ninguna durante los primeros minutos tras la apertura de las
@@ -30,6 +32,8 @@ def hora_permitida(hora: datetime, desde: time, hasta: time, espera_min: int, so
     if not desde < h <= hasta:
         return False
     if espera_min > 0 and APERTURA_NY < h < fin_de_la_espera(espera_min):
+        return False
+    if solo_londres and h > APERTURA_NY:
         return False
     return not (solo_tras_apertura and h <= APERTURA_NY)
 

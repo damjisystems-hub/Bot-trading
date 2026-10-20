@@ -4,7 +4,9 @@
 Uso:
   python3 probar.py datos/NAS100_M1.csv --mercado nasdaq
   python3 probar.py datos/EURUSD_M15.csv --mercado eurusd --comparar
-  python3 probar.py datos/XAUUSD_M1.csv --mercado oro --operaciones resultados/oro.csv
+  python3 probar.py datos/XAUUSD_M1.csv --mercado oro --operaciones resultados/oro.csv --memoria resultados/memoria_oro.csv
+
+Para aprender de la memoria y probar reglas candidatas en dos periodos, usad aprender.py.
 
 Los datos pueden ser barras de 1 o de 15 minutos exportadas de MT5 o un CSV con la hora en UTC
 (ver README.md).
@@ -16,21 +18,15 @@ import argparse
 import csv
 import os
 import sys
+from dataclasses import replace
 
+from crt import memoria
 from crt.informe import linea_comparacion, texto
+from crt.laboratorio import CANDIDATAS
 from crt.mercados import MERCADOS
 from crt.motor import Ajustes, probar
+from crt.noticias import leer_noticias
 from crt.velas import leer_csv
-
-VARIANTES = (
-    ("Base: 1 a 2, espera de 45 min", {}),
-    ("1 a 1, como el autor", {"ratio": 1.0}),
-    ("Sin espera tras la apertura", {"espera_apertura_min": 0}),
-    ("Espera de 30 min", {"espera_apertura_min": 30}),
-    ("Espera de 60 min", {"espera_apertura_min": 60}),
-    ("Solo después de la apertura", {"solo_tras_apertura": True}),
-    ("Diario: basta con que no vaya en contra", {"diario": "no_rojo"}),
-)
 
 
 def guardar_operaciones(ruta: str, res) -> None:
@@ -68,6 +64,8 @@ def main() -> int:
     p.add_argument("--solo-tras-apertura", action="store_true")
     p.add_argument("--comparar", action="store_true", help="prueba también las variantes y las compara")
     p.add_argument("--operaciones", help="guarda cada operación en este CSV")
+    p.add_argument("--memoria", help="guarda la memoria (cada situación vista y qué decidió) en este CSV")
+    p.add_argument("--noticias", help="CSV de noticias (fecha, hora, moneda, evento, importancia)")
     args = p.parse_args()
 
     barras = leer_csv(args.datos, args.formato, args.desfase_servidor)
@@ -81,15 +79,22 @@ def main() -> int:
         diario=args.diario,
         solo_tras_apertura=args.solo_tras_apertura,
     )
-    res = probar(barras, mercado, ajustes)
+    noticias = leer_noticias(args.noticias, mercado.monedas) if args.noticias else None
+    res = probar(barras, mercado, ajustes, noticias)
     print(texto(res))
     if args.operaciones:
         guardar_operaciones(args.operaciones, res)
         print(f"\nOperaciones guardadas en {args.operaciones}")
+    if args.memoria:
+        memoria.guardar(args.memoria, memoria.filas(res))
+        print(f"Memoria guardada en {args.memoria}")
     if args.comparar:
-        print("\nComparación de variantes:")
-        for nombre, cambios in VARIANTES:
-            print(linea_comparacion(nombre, probar(barras, mercado, Ajustes(**cambios))))
+        print("\nComparación con las reglas candidatas (sin separar periodos; para eso, aprender.py):")
+        print(linea_comparacion("Las reglas de hoy", res))
+        for nombre, cambios in CANDIDATAS:
+            if cambios.get("sin_noticias") and not noticias:
+                continue
+            print(linea_comparacion(nombre, probar(barras, mercado, replace(ajustes, **cambios), noticias)))
     return 0
 
 

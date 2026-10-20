@@ -101,8 +101,40 @@ Son decisiones que el autor toma a ojo y cambian de un día a otro. La prueba co
 - Dar más valor a un rango cuya vela 1 es grande.
 - La gestión de cuentas de fondeo del autor.
 
+## Cómo aprende el bot (y quién cambia las reglas)
+
+- **Memoria:** apunta cada situación que ve.
+  - Es la primera vez que una idea de 4H da un order block en horario, se tome o no, o es una entrada.
+  - Guarda la decisión y su motivo, y el contexto:
+    - sesión, día y escenario;
+    - sesgo semanal y mensual;
+    - cómo se puso en verde el diario y el 4H;
+    - tamaño de la vela 1 y del stop;
+    - distancia al objetivo diario;
+    - noticias.
+  - Guarda también el resultado y hasta dónde llegó a favor y en contra.
+  - Las descartadas se siguen como operaciones fantasma hasta su stop o su TP.
+  - El bot de MT5 escribe la misma memoria en directo.
+- **Laboratorio:** prueba las reglas candidatas en dos periodos:
+  - 1 a 1;
+  - distintas esperas tras la apertura;
+  - solo después de la apertura, o solo en Londres;
+  - diario menos exigente;
+  - stop a la entrada al llegar a +1 R;
+  - solo rangos con la vela 1 grande;
+  - sin el escenario 3;
+  - una operación al día;
+  - no operar los días de noticias.
+
+  Una candidata solo se propone si mejora la media de R por operación en los dos periodos con al menos 30
+  operaciones en cada uno.
+- **Examen:** `casos/casos.csv` guarda situaciones reales con lo que el bot tenía que hacer: las de los vídeos y las
+  que enseñe el equipo. Un caso suspendido es una pista, no una orden: se mira por qué y, si hace falta, se prueba una
+  regla en el laboratorio.
+- **Las reglas solo cambian cuando el equipo lo aprueba.** Se apunta aquí con la fecha y se cambian el código y su
+  prueba automática.
+
 ## Lo que todavía no hace
 
-- Avisar al móvil y conectarse a MT5.
 - Aplicar la pérdida máxima diaria conjunta de los tres mercados.
-- Avisar de las noticias del día (FOMC, NFP…).
+- Operar contra el sesgo, usar rangos de 8H, 3H o 2H, y las demás cosas de «Lo que el bot no copia».

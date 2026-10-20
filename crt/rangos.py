@@ -28,6 +28,7 @@ class Evento:
     objetivo: float | None = None
     barrido: float | None = None
     escenario: str = "otro"  # por qué camino llegó (escenarios del primer vídeo)
+    vela1_rel: float | None = None  # tamaño de la vela 1 comparado con el de las últimas velas del marco
     estado: str = "activo"  # activo, completado o anulado
     velas_desde: int = 0  # velas del marco cerradas desde que se formó
     velas_hasta_completar: int | None = None

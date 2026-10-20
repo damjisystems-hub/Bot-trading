@@ -6,6 +6,13 @@ Guía común para cualquier IA que trabaje en este repositorio. `CLAUDE.md` solo
 - **Las reglas de la estrategia están en `ESTRATEGIA.md`.** Si cambia una regla, cámbiala allí, en el código y en su
   prueba automática.
 - **Las decisiones las toma el equipo.** Si falta una, pregúntala. Si tuviste que suponer algo, dilo al terminar.
+- **El bot aprende con método, no solo:**
+  - cuando el dueño enseñe una situación (de un vídeo o de lo que le pase), añádela a `casos/casos.csv` con
+    mercado, franja en hora de Nueva York y lo que tenía que hacer;
+  - un caso suspendido o una idea nueva se prueban en el laboratorio (`aprender.py`) y la regla solo cambia si el
+    equipo la aprueba.
+- **La memoria del bot de MT5 (`mt5/`) tiene las mismas columnas y los mismos motivos que `crt/memoria.py` y
+  `crt/motor.py`:** si cambias uno, cambia el otro.
 - **Nada de dinero real** ni de órdenes en cuentas reales sin permiso explícito del dueño. El orden es demo, cuenta
   propia y después fondeo.
 - **Resultados honestos:**

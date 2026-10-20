@@ -1,37 +1,59 @@
 # Bot CRT
 
-El cerebro de un bot de trading con la estrategia CRT («Candle Range Theory») para el NASDAQ, el EUR/USD y el oro, y
-la **prueba con datos del pasado** para saber si las reglas ganan antes de arriesgar dinero.
+Bot de trading con la estrategia CRT («Candle Range Theory») para el NASDAQ, el EUR/USD y el oro. Tiene tres partes:
 
-**Estado (19-10-2026):**
-- Las reglas están programadas y comprobadas con 41 pruebas automáticas.
+- **El cerebro** (`crt/`): las reglas de la estrategia, en Python.
+- **El aprendizaje**:
+  - la memoria de cada situación;
+  - el laboratorio, que prueba reglas nuevas;
+  - el examen con situaciones reales.
+- **El bot en vivo para MT5** (`mt5/`): avisa al móvil y, más adelante, opera en demo.
+
+**Estado (20-10-2026):**
+- Las reglas, la memoria, el laboratorio y el examen están programados y comprobados con pruebas automáticas.
 - **Falta la prueba con datos reales del pasado**, porque faltan los datos (ver «Datos»).
-- Todavía **no** avisa al móvil ni opera.
+- El bot de MT5 está escrito, pero no se ha podido compilar aquí: hay que compilarlo en MetaEditor (ver `mt5/LEEME.md`).
+- No opera con dinero real.
 
 - Las reglas exactas: [ESTRATEGIA.md](ESTRATEGIA.md).
 - El flujo dibujado: https://claude.ai/artifact/MW8eiwC99U2ekSHkywnrfz (página privada).
 
-## Probarlo con datos del pasado
+## Cómo aprende
+
+No cambia sus reglas solo: aprende con un método y vosotros aprobáis cada cambio.
+
+1. **Memoria.** Apunta cada situación que ve, la tome o no, y por qué. Las señales que descarta las sigue como
+   operaciones «fantasma» para saber qué habría pasado. Hace lo mismo el bot de MT5 en directo.
+2. **Laboratorio.** Prueba cada regla candidata (las cosas que el autor hace a ojo, o lo que se os ocurra) en dos
+   periodos. Solo la propone si mejora en los dos y con suficientes operaciones.
+3. **Examen.** Situaciones reales que le enseñáis, de los vídeos o de lo que os pase, con lo que tenía que hacer
+   (`casos/casos.csv`). Se examina con todas y explica qué hizo y por qué.
+
+**Para enseñarle una situación nueva**, decídsela a Claude: mercado, día, hora y qué tenía que hacer. Se añade al
+examen. Si el bot falla, se busca por qué; si hace falta una regla, se prueba en el laboratorio y decidís vosotros.
+
+## Órdenes
 
 Solo hace falta Python 3.9 o más nuevo, sin instalar nada:
 
 ```
 python3 probar.py datos/NAS100_M1.csv --mercado nasdaq
-python3 probar.py datos/NAS100_M1.csv --mercado nasdaq --comparar
-python3 probar.py datos/XAUUSD_M1.csv --mercado oro --operaciones resultados/oro.csv
+python3 aprender.py datos/NAS100_M1.csv --mercado nasdaq --noticias datos/noticias.csv
+python3 examen.py datos/NAS100_M1.csv --mercado nasdaq
+python3 aprender.py --memoria-mt5 datos/memoria_NAS100.csv
 ```
 
+- `probar.py`: la prueba con el pasado.
+  - Saca cuántas operaciones salen, el acierto, el resultado en R (1 R es lo que se arriesga en cada operación), la
+    peor racha y la peor caída.
+  - Lo separa por sesión, escenario, dirección y año.
+  - Con `--memoria` guarda la memoria y con `--comparar` compara las reglas candidatas.
+- `aprender.py`: la prueba más la memoria (qué situaciones ganan y cuáles pierden, y qué habría pasado con las
+  descartadas) más el laboratorio. Guarda la memoria en `resultados/`.
+- `examen.py`: el examen con `casos/casos.csv`. Los datos tienen que empezar unos meses antes de los casos.
+- `aprender.py --memoria-mt5`: el informe de lo que ha apuntado el bot de MT5 en directo.
 - Mercados: `nasdaq`, `eurusd` y `oro`.
-- El informe dice cuántas operaciones salen, el porcentaje de acierto, el resultado en R, la peor racha y la peor caída.
-  También lo separa por sesión (Londres o tras la apertura), escenario, dirección y año.
-  - 1 R es lo que se arriesga en cada operación.
-  - Con objetivo 1 a 2, para no perder hay que acertar más del 33 %.
-- `--comparar` prueba también las variantes que quedaron abiertas:
-  - 1 a 1;
-  - 0, 30 o 60 minutos de espera tras la apertura;
-  - solo después de la apertura;
-  - un diario menos exigente.
-- `--operaciones` guarda cada operación en un CSV.
+- Las cifras dependen de los datos y de los costes supuestos de cada mercado (`crt/mercados.py`).
 
 ## Datos
 
@@ -39,14 +61,15 @@ Hacen falta barras de 1 o de 15 minutos de varios años de cada mercado:
 
 1. **Desde MT5:**
    - Ver → Símbolos (Ctrl+U) → pestaña «Barras».
-   - Elegid el símbolo (por ejemplo NAS100, EURUSD o XAUUSD), «M1» o «M15» y las fechas → «Solicitar» → «Exportar
-     barras».
+   - Elegid el símbolo, «M1» o «M15» y las fechas → «Solicitar» → «Exportar barras».
    - Guardad el archivo en `datos/`.
    - El programa supone que la hora del servidor es la de Nueva York + 7 (GMT+2 en invierno y GMT+3 en verano, lo
      normal). Si vuestro bróker usa otra, se cambia con `--desfase-servidor`.
    - Ojo: muchos brókeres solo dan unos meses de barras de 1 minuto.
-2. **Dukascopy:** da años de datos de 1 minuto gratis, pero desde la sesión de Claude en la nube está bloqueado
-   (`datafeed.dukascopy.com`). Se puede permitir en los ajustes de red del entorno.
+2. **Dukascopy:** da años de datos de 1 minuto gratis. Desde la sesión de Claude en la nube está bloqueado
+   (`datafeed.dukascopy.com`); se puede permitir en los ajustes de red del entorno.
+3. **Noticias:** el bot de MT5 las exporta desde su calendario económico con el parámetro `ExportarNoticias`
+   (`noticias.csv`).
 
 Los datos y los resultados no se suben a git (`datos/` y `resultados/` están en `.gitignore`).
 
@@ -60,13 +83,20 @@ python3 -m unittest
 
 | Ruta | Qué hay |
 |---|---|
-| `ESTRATEGIA.md` | Las reglas exactas, lo decidido y lo provisional. |
-| `probar.py` | La orden para lanzar la prueba con el pasado. |
+| `ESTRATEGIA.md` | Las reglas exactas, lo decidido, lo provisional y cómo aprende. |
+| `probar.py`, `aprender.py`, `examen.py` | Las tres órdenes. |
+| `casos/casos.csv` | Las situaciones del examen: las de los vídeos y las que le enseñéis. |
 | `crt/velas.py` | Lee el CSV (MT5 o UTC) y monta las velas de 1H, 4H, diario, semanal y mensual en hora de Nueva York. |
 | `crt/rangos.py` | Rangos, rupturas, cuándo se completan o se anulan, el semáforo y los escenarios. |
-| `crt/marcos.py` | Cada marco de tiempo con sus velas y su semáforo, y el verde anticipado con el marco menor. |
-| `crt/entrada.py` | El order block de M15 y el horario de entradas. |
-| `crt/motor.py` | La prueba con el pasado: recorre las barras una a una y hace lo que haría el bot, sin mirar el futuro. |
-| `crt/informe.py` | El resumen en texto. |
+| `crt/marcos.py` | Cada marco con sus velas, su semáforo y el verde anticipado con el marco menor. |
+| `crt/entrada.py` | El order block de M15 y el horario. |
+| `crt/motor.py` | La prueba con el pasado: hace lo que haría el bot, barra a barra, y apunta la memoria. |
+| `crt/memoria.py` | La memoria en CSV (las mismas columnas que la del bot de MT5). |
+| `crt/aprendizaje.py` | Qué situaciones ganan y cuáles pierden. |
+| `crt/laboratorio.py` | Las reglas candidatas y su prueba en dos periodos. |
+| `crt/casos.py` | El examen. |
+| `crt/noticias.py` | Las noticias fuertes, para avisar y para probar la regla de no operar esos días. |
 | `crt/mercados.py` | Diferencial y colchón del stop de cada mercado (valores típicos, no medidos). |
+| `crt/informe.py` | El resumen de la prueba. |
+| `mt5/` | El bot en vivo para MT5 y su guía. |
 | `tests/` | Pruebas automáticas con precios inventados. |

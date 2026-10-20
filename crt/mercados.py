@@ -13,10 +13,11 @@ class Mercado:
     diferencial: float  # spread: diferencia entre el precio de compra y el de venta
     colchon: float  # margen del stop más allá del barrido
     decimales: int
+    monedas: tuple = ("USD",)  # de qué monedas importan las noticias
 
 
 MERCADOS = {
     "nasdaq": Mercado("NASDAQ", diferencial=1.5, colchon=3.0, decimales=1),
-    "eurusd": Mercado("EUR/USD", diferencial=0.00008, colchon=0.0001, decimales=5),
+    "eurusd": Mercado("EUR/USD", diferencial=0.00008, colchon=0.0001, decimales=5, monedas=("USD", "EUR")),
     "oro": Mercado("Oro (XAU/USD)", diferencial=0.3, colchon=0.5, decimales=2),
 }

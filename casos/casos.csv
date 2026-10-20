@@ -1,0 +1,23 @@
+id,mercado,desde,hasta,esperado,fuente,nota
+v3-lun-09-03,nasdaq,2026-03-09 09:00,2026-03-09 13:00,compra,Tercer vídeo (semana del lunes 9 de marzo),Rango de 4H ya formado: la vela de las 9 sube directa.
+v3-mar-10-03,nasdaq,2026-03-10 08:00,2026-03-10 13:00,compra,Tercer vídeo,Rango de 4H formado y rango de 1H a las 8:00: entrada con el order block de M15 sin esperar a la apertura.
+v3-mie-11-03,nasdaq,2026-03-11 09:00,2026-03-11 13:00,compra,Tercer vídeo,La vela de las 9 hace el barrido alcista: compras otra vez.
+v3-jue-12-03,nasdaq,2026-03-12 09:00,2026-03-12 13:00,venta,Tercer vídeo,Rango de 4H ya formado: «otro caso de ventas».
+v3-vie-13-03,nasdaq,2026-03-13 09:00,2026-03-13 13:00,venta,Tercer vídeo,Sin rango de 4H previo: la vela de las 9 toma el máximo de la anterior y reacciona hacia abajo.
+v3-lun-16-03,nasdaq,2026-03-16 09:00,2026-03-16 13:00,venta,Tercer vídeo (semana del 16 de marzo),La vela de las 9 barre y crea el rango bajista; después hace otra manipulación y podía acabar en stop.
+v3-mar-17-03,nasdaq,2026-03-17 01:00,2026-03-17 13:00,nada,Tercer vídeo,Sin rango diario claro: toma el máximo pero no reacciona. El autor no habría operado.
+v3-mie-18-03,nasdaq,2026-03-18 01:00,2026-03-18 13:00,no compra,Tercer vídeo,Rango alcista de 4H pero barrido bajista en el diario: el de 4H falla. No había que comprar.
+v3-ultimo,nasdaq,2026-03-19 09:00,2026-03-20 13:00,compra,Tercer vídeo,Completa el rango bajista diario; barrido alcista y rango de 4H con la vela de las 9: compra en la apertura. El vídeo no dice si es el jueves 19 o el viernes 20.
+v5-eurusd-jue-18,eurusd,2025-09-18 01:00,2025-09-18 13:00,venta,Quinto vídeo (fecha deducida: el FOMC del 17-9-2025; por confirmar),Rango diario bajista; en 4H toma el máximo de la vela anterior y cierra dentro; rango de 1H y order block de M15: venta hacia el objetivo diario.
+v1-lunes,nasdaq,,,compra,Primer vídeo (semana con NFP el viernes; falta la fecha),Rango en contra en la apertura; la compra llega después del barrido y acaba en stop (falso movimiento).
+v1-martes,nasdaq,,,compra,Primer vídeo,Rango de 4H a favor: buena compra; después se forma uno en contra y la apertura ya no da más.
+v1-miercoles,nasdaq,,,compra,Primer vídeo,Escenario 1: completa el rango bajista de 4H al punto y forma uno alcista en la vela de la apertura.
+v1-viernes,nasdaq,,,compra,Primer vídeo,Escenario 3 en Londres: toma el mínimo de la vela anterior; rango de 1H cerrado y order block de M15.
+v2-lunes,nasdaq,,,compra,Segundo vídeo (falta la fecha),Compras en Londres con TP y compra en la apertura con rango de 1H a favor que acabó en stop.
+v2-martes,nasdaq,,,compra,Segundo vídeo,El mismo setup que el lunes: compra en la apertura hacia el objetivo de 8H (día de FOMC).
+v4-lunes,nasdaq,,,venta,Cuarto vídeo (semana bajista por el rango mensual; falta la fecha),"Rangos diario, de 4H y de 1H a favor: venta con el order block de las 7:00 o en la apertura."
+v4-martes,nasdaq,,,no venta,Cuarto vídeo,El diario y el 4H forman rangos alcistas: no se vende aunque el objetivo mensual esté abajo.
+v4-miercoles,nasdaq,,,venta,Cuarto vídeo,Rango bajista de 4H ya formado: venta en la apertura tras confirmar.
+v4-jueves,nasdaq,,,compra,Cuarto vídeo,Completado el rango mensual bajista: rangos diario y de 4H alcistas y compra en Londres con order block de M15.
+v6-jueves,nasdaq,,,no compra,Sexto vídeo (falta la fecha),Sesgo alcista pero rango bajista de 4H por la tarde: hay que esperar; en la apertura cae unos 1.000 puntos sin reaccionar.
+v6-viernes,nasdaq,,,compra,Sexto vídeo,Tras la apertura completa el rango de 1H y reacciona: compra.

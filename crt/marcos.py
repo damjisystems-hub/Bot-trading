@@ -14,6 +14,7 @@ from .rangos import Evento, escenario, evaluar, semaforo
 from .velas import QUINCE_MIN, Vela, clave_y_fin
 
 MAX_VELAS_EVENTO = 60  # un rango que lleva tantas velas sin completarse deja de seguirse
+VELAS_PARA_LA_MEDIA = 20  # el tamaño «normal» de una vela es la media de las últimas 20
 
 
 @dataclass
@@ -27,6 +28,7 @@ class Setup:
     i_inicio: int  # la entrada tiene que llegar después de esta barra de M15
     via: str  # "cierre" (vela cerrada) o "anticipo" (con el marco menor)
     escenario: str
+    vela1_rel: float | None = None  # tamaño de la vela 1 comparado con el tamaño medio de las velas del marco
 
 
 class Marco:
@@ -79,14 +81,27 @@ class Marco:
             e for e in self.eventos if e.estado == "activo" and (e.velas_desde < MAX_VELAS_EVENTO or e is self.ultimo)
         ]
         nuevo = evaluar(self.cerradas[-1], vela, self.nombre) if self.cerradas else None
+        if nuevo is not None:
+            nuevo.vela1_rel = self._relativo(self.cerradas[-1])
         self.cerradas.append(vela)
-        del self.cerradas[:-3]
+        del self.cerradas[: -(VELAS_PARA_LA_MEDIA + 1)]
         if nuevo is not None:
             nuevo.escenario = escenario(self.ultimo, nuevo.direccion)
             if nuevo.tipo == "rango":
                 self.eventos.append(nuevo)
             self.ultimo = nuevo
         return nuevo
+
+    def rango_medio(self) -> float | None:
+        """Tamaño medio (máximo − mínimo) de las últimas velas cerradas, o None si aún hay pocas."""
+        ultimas = self.cerradas[-VELAS_PARA_LA_MEDIA:]
+        if len(ultimas) < 5:
+            return None
+        return sum(v.maximo - v.minimo for v in ultimas) / len(ultimas)
+
+    def _relativo(self, vela: Vela) -> float | None:
+        medio = self.rango_medio()
+        return (vela.maximo - vela.minimo) / medio if medio else None
 
     # ───────────────────────── Semáforo ─────────────────────────
 
@@ -95,7 +110,7 @@ class Marco:
         e = self.ultimo
         if e is not None and e.tipo == "rango" and e.estado == "activo" and e.direccion == direccion:
             ids = (e.id, ("anticipo", self.nombre, e.i_vela_inicio, direccion))
-            return Setup(ids, direccion, e.barrido, e.objetivo, e.i_formado, "cierre", e.escenario)
+            return Setup(ids, direccion, e.barrido, e.objetivo, e.i_formado, "cierre", e.escenario, e.vela1_rel)
         if self.menor is None or self.parcial is None or not self.cerradas:
             return None
         i_barrido = self.i_barrido[direccion]
@@ -110,7 +125,9 @@ class Marco:
         else:
             barrido, objetivo = self.parcial.maximo, previa.minimo
         ids = (("anticipo", self.nombre, self.parcial.i_inicio, direccion),)
-        return Setup(ids, direccion, barrido, objetivo, menor.i_inicio, "anticipo", escenario(self.ultimo, direccion))
+        return Setup(
+            ids, direccion, barrido, objetivo, menor.i_inicio, "anticipo", escenario(self.ultimo, direccion), self._relativo(previa)
+        )
 
     def color(self, direccion: int, precio: float) -> str:
         if self.setup(direccion, precio) is not None:
