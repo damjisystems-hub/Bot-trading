@@ -39,4 +39,5 @@ O pasadle el archivo a Claude. El informe cuenta:
 - si después de una pérdida seguís el plan igual que siempre o hay operaciones de venganza;
 - la peor racha, los días con demasiadas operaciones y los días que se pasó el tope de pérdida (3 R);
 - cuánto tiempo y cuántas operaciones lleváis en cada fase (demo, propia, fondeo). Cuándo se pasa de fase lo decide
-  el equipo; el autor estuvo 6 meses en demo.
+  el equipo; el autor estuvo 6 meses en demo y recomienda al menos 3 meses (unas 60 sesiones) haciéndolo todo bien y
+  sin emociones.

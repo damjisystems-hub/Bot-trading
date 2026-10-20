@@ -29,7 +29,7 @@ COLUMNAS = ["fecha", "mercado", "direccion", "cuenta", "siguio_el_plan", "regla_
 CUENTAS = ("demo", "propia", "fondeo")
 MAXIMO_OPERACIONES_DIA = 2  # por mercado, como el bot
 TOPE_DE_PERDIDA_R = 3.0  # entre los tres mercados, como el bot
-MESES_DE_DEMO_DEL_AUTOR = 6  # vídeo de «+100k al año»
+MESES_DE_DEMO_DEL_AUTOR = 6  # vídeo de «+100k al año»; en el del plan de 0 a 100.000 $ recomienda 3 (unas 60 sesiones)
 
 
 @dataclass
@@ -184,7 +184,8 @@ def _psicologia(apuntes: list[Apunte]) -> list[str]:
 def _fases(apuntes: list[Apunte]) -> list[str]:
     lineas = [
         f"Fases: primero demo, luego cuenta propia y después fondeo. Cuándo se pasa de una a otra lo decide el equipo; "
-        f"el autor estuvo {MESES_DE_DEMO_DEL_AUTOR} meses en demo antes de pasar a cuentas de verdad."
+        f"el autor estuvo {MESES_DE_DEMO_DEL_AUTOR} meses en demo antes de pasar a cuentas de verdad y recomienda al menos 3 "
+        "meses (unas 60 sesiones) haciéndolo todo bien y sin emociones."
     ]
     for cuenta in CUENTAS:
         grupo = [a for a in apuntes if a.cuenta == cuenta]

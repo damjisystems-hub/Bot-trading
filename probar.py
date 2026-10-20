@@ -22,7 +22,7 @@ from dataclasses import replace
 
 from crt import memoria
 from crt.informe import linea_comparacion, texto
-from crt.laboratorio import CANDIDATAS
+from crt.laboratorio import CANDIDATAS, necesita_noticias
 from crt.mercados import MERCADOS
 from crt.motor import Ajustes, probar
 from crt.noticias import leer_noticias
@@ -90,11 +90,12 @@ def main() -> int:
         print(f"Memoria guardada en {args.memoria}")
     if args.comparar:
         print("\nComparación con las reglas candidatas (sin separar periodos; para eso, aprender.py):")
-        print(linea_comparacion("Las reglas de hoy", res))
+        ancho = max(len(nombre) for nombre, _ in CANDIDATAS) + 2  # para que las cifras queden en columna
+        print(linea_comparacion("Las reglas de hoy", res, ancho))
         for nombre, cambios in CANDIDATAS:
-            if cambios.get("sin_noticias") and not noticias:
+            if necesita_noticias(cambios) and not noticias:
                 continue
-            print(linea_comparacion(nombre, probar(barras, mercado, replace(ajustes, **cambios), noticias)))
+            print(linea_comparacion(nombre, probar(barras, mercado, replace(ajustes, **cambios), noticias), ancho))
     return 0
 
 

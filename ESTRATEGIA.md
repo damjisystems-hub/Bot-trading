@@ -1,7 +1,7 @@
 # Estrategia CRT: las reglas del bot
 
-Las reglas salen de doce vídeos del autor de la estrategia (CRT, «Candle Range Theory») y de lo que decidió el equipo
-el 19-10-2026. El flujo dibujado está en la página https://claude.ai/artifact/MW8eiwC99U2ekSHkywnrfz (privada).
+Las reglas salen de veintitrés vídeos del autor de la estrategia (CRT, «Candle Range Theory») y de lo que decidió el
+equipo el 19-10-2026. El flujo dibujado está en la página https://claude.ai/artifact/MW8eiwC99U2ekSHkywnrfz (privada).
 
 Si cambia una regla, se cambia aquí, en el código y en su prueba automática.
 
@@ -21,11 +21,18 @@ Si cambia una regla, se cambia aquí, en el código y en su prueba automática.
 
 ## Pendiente de decidir
 
-- **A qué hora empiezan vuestras velas de 4H.** En el quinto vídeo son las de la 1, las 5 y las 9 de Nueva York (el día
-  empieza a las 17:00, como en MT5). En el vídeo de los 150.000 $ la vela de 4H de la apertura es «la de las 6»: es lo
-  que sale en el gráfico de futuros de TradingView, cuyo día empieza a las 18:00 (velas de las 2, las 6 y las 10). En
-  el vídeo de los 6.000 $, en cambio, una vela de 4H abre a las 5:00, como en el horario del bot. El bot usa las de las
-  17:00 y el laboratorio prueba también las de las 18:00 (`HoraInicio4H` en MT5).
+- **A qué hora empiezan vuestras velas de 4H en el NASDAQ.** En EUR/USD ya está claro: en los gráficos de forex de los
+  vídeos nuevos (el curso desde 0, el paso a paso, la estrategia simple, el backtest y el de las salidas) son las de la
+  1, las 5 y las 9 de Nueva York, y en el de las salidas dice que «a las 11» abren las de 1H, 2H y 6H pero no la de 4H,
+  algo que solo cuadra con el día de 17:00 a 17:00, como en MT5. En el NASDAQ sigue la duda: en el vídeo de los 150.000 $
+  la vela de 4H de la apertura es «la de las 6», que es lo que sale en el gráfico de futuros de TradingView (el día
+  empieza a las 18:00 y las velas son las de las 2, las 6 y las 10); en el de los 6.000 $, en cambio, una vela de 4H
+  abre a las 5:00. El bot usa las de las 17:00 y el laboratorio prueba también las de las 18:00 (`HoraInicio4H` en MT5).
+- **El orden de las fases de cuenta.** El equipo decidió demo, cuenta propia y fondeo. El autor recomienda lo contrario
+  (vídeos de los 4.500 $, del mejor año y del plan de 0 a 100.000 $): fondeo primero y capital propio solo con lo ganado
+  en fondeo y un buen colchón («mil veces prefiero una cuenta de fondeo que está en break even»). ¿Lo mantenéis?
+- **La libra (GBP/USD).** El autor opera el euro y la libra, y casi nunca el oro. El bot hace NASDAQ, EUR/USD y oro.
+  Los ejemplos de la libra del vídeo de las pruebas de fondeo no están en el examen por eso.
 - **Las fechas de los casos del examen** que no la tienen, y confirmar las deducidas (ver `casos/casos.csv`).
 
 ## Horario
@@ -104,7 +111,9 @@ y el aprendizaje mide si las operaciones que las llevan pierden más.
 | el 3H va en contra | El último evento del 3H es un rango activo o una ruptura en contra. | Vídeo de los 150.000 $ (4H, 3H y 1H alineados). |
 | el 1H va en contra | Lo mismo en 1H. | Vídeos de los stops y de los 150.000 $. |
 | justo antes de la apertura | Entrada entre las 9:00 y las 9:30. | Vídeo de los stops: el stop del martes; «mi acierto mejora mucho cuando ya ha pasado la apertura». |
-| entrada lejos del barrido | El stop es más grande que una vela media de 4H. | Vídeo de los stops: «con una mala entrada, si te equivocas es stop directo; con una buena, TP o break even». |
+| entrada lejos del barrido | El stop es más grande que una vela media de 4H. | Vídeo de los stops: «con una mala entrada, si te equivocas es stop directo; con una buena, TP o break even». Vídeo de las pruebas de fondeo: «nunca entréis persiguiendo el precio cuando está tan lejos». |
+| el 1H está tomando máximos / mínimos | Lo mismo en 1H. | Vídeo del paso a paso: «la nueva vela de 1H abre por arriba… otra red flag». |
+| compra por encima / venta por debajo de la apertura del día | En compras, el precio ya está por encima de donde abrió el día (17:00 de Nueva York); en ventas, por debajo. | Vídeo de la estrategia simple: «quieres vender por encima de la apertura diaria». |
 
 **Nota:** A sin banderas, B con una, C con dos o más. El informe de aprendizaje separa los resultados por nota y por
 bandera.
@@ -129,22 +138,47 @@ en la cabeza.
   regla aprobada.
 - Cuando el objetivo se cumple, se cierra: alargarlo es avaricia. En el vídeo de los 6.000 $ el autor lo cuenta de una
   venta suya: habría sido TP, quiso apurar más y acabó casi sin ganar. El bot nunca alarga su TP.
+- **El riesgo no cambia tampoco cuando se va perdiendo** (vídeos de las pruebas de fondeo y del plan de 0 a 100.000 $):
+  «decidí dejar siempre el riesgo fijo al 1 % y si lo tengo que recuperar, lo voy a recuperar también al 1 %». Bajarlo
+  tras perder hace que se pierda rápido y se recupere lento, y cambiarlo «arruina la probabilidad».
+- **Stops buenos y stops malos** (vídeo del backtest): un stop con la lógica bien hecha «no pasa nada, bienvenido sea y a
+  seguir»; lo que no se puede permitir son los malos, los que llegan por saltarse el plan. El bot los separa con la nota.
+- **Paciencia, sin objetivo de dinero** (curso desde 0): a veces hay que pasar «3 o 4 horas sin pulsar ningún botón», y
+  ponerse un objetivo del día («hoy voy a ganar 2.000 $») lleva a forzar operaciones. La prisa por pasar cuentas fue su
+  peor enemigo. El bot no tiene objetivo de dinero: solo entra cuando sale la situación.
+- **Coherencia en las salidas** (vídeo de las salidas): «si jugamos conservadores, jugamos conservadores para todo», sin
+  quejarse cuando el precio sigue sin nosotros. Lo que dice cuál compensa es contar las veces: el laboratorio compara
+  cada salida candidata con las mismas operaciones.
+- **El tope del día y las cuentas de futuros.** En el vídeo de los 4.500 $ perder un 3 % en un día es «hacer el tonto»
+  («si ayer me llego a quedar con la primera pérdida del -1…»). Y en el de «¿Me paso a futuros?» el tope total de una
+  cuenta de futuros es de un 3–4 % y sube con el saldo. Con el 1 % por operación, un día con el tope de 3 R se llevaría
+  casi toda una cuenta así. Antes de pasar a fondeo de futuros hay que decidir el riesgo y el tope (el laboratorio ya
+  prueba el de 1 R).
 
 **Lo que hace el equipo (cuaderno, `cuaderno/`):** apuntar cada operación propia con si se siguió el plan, la regla que
 se saltó y la emoción. El informe del cuaderno califica cada día por el proceso, avisa de las ganadas saltándose el plan
 (son las que crean malos hábitos), de las operaciones de venganza tras una pérdida y de los días que se pasó el tope.
 
-**Fases de cuenta** (decidido: demo, propia y fondeo). Cuándo se pasa de una a otra lo decide el equipo. Como
-referencia, el autor estuvo 6 meses en demo, se hizo un colchón con lo ganado antes de subir el tamaño, subió poco a poco
-y operó sin presión de dinero ni de tiempo. El informe del cuaderno dice cuánto tiempo y cuántas operaciones lleváis en
-cada fase y con qué disciplina.
+**Fases de cuenta** (decidido: demo, propia y fondeo; el autor recomienda otro orden, ver «Pendiente de decidir»).
+Cuándo se pasa de una a otra lo decide el equipo. Como referencia:
+
+- el autor estuvo 6 meses en demo, se hizo un colchón con lo ganado antes de subir el tamaño, subió poco a poco y operó
+  sin presión de dinero ni de tiempo;
+- en el plan de 0 a 100.000 $ recomienda al menos 3 meses de demo (unas 60 sesiones) con Londres y Nueva York, hasta que
+  «sin emociones haces todo perfecto», y una hora al día de prueba con el pasado «para ganar confianza»;
+- de la demo saca qué días y qué velas le van mejor («si ves que la vela de las nueve es la que se te da mejor…»): el
+  informe de aprendizaje separa las operaciones por día y por vela de 4H de la entrada;
+- para escalar, empezar con cuentas pequeñas y no saltarse escalones («no paséis de 5 a 50»).
+
+El informe del cuaderno dice cuánto tiempo y cuántas operaciones lleváis en cada fase y con qué disciplina.
 
 ## Valores provisionales
 
 Son propuestas; se ajustan con la prueba con el pasado:
 
 - espera tras la apertura: 45 minutos;
-- horario de entradas: de 1:00 a 13:00 de Nueva York;
+- horario de entradas: de 1:00 a 13:00 de Nueva York (en forex el autor empieza a las 2:30, «antes de eso nunca», y da
+  la sesión por terminada a las 11: el laboratorio prueba las dos cosas);
 - riesgo: 1 % de la cuenta por operación;
 - tope de pérdida del día: 3 R entre los tres mercados (en MT5, sumados; en la prueba con el pasado, cada mercado solo);
 - diferencial y colchón del stop de cada mercado: `crt/mercados.py` (valores típicos, no medidos en vuestro bróker);
@@ -157,18 +191,28 @@ reglas candidatas.
 
 - Operar contra el sesgo con un objetivo corto cuando 8H, 4H y 1H se alinean al revés (como la venta del vídeo de los
   6.000 $ tras un rango bajista de 4H).
-- Rangos de 8H o de 2H.
+- Rangos de 8H o de 2H, y salidas por tiempo con velas de 2H o de 6H (vídeo de las salidas). El bot hace la de 4H.
 - El «failure swing»: barrer un máximo o mínimo anterior que no es el de la vela de antes.
-- Entrar con poco y promediar en la entrada ideal.
+- Seguir con un rango de 1H cuando el de 4H ya dio su entrada y queda el objetivo diario (el miércoles del paso a paso).
+- Cambiar el sesgo dentro de la semana: completado el objetivo semanal, usar el diario hasta el viernes (paso a paso).
+- Entrar con poco y promediar en la entrada ideal, o recargar con la cuenta propia (vídeo de los 4.500 $).
 - Entrar en plena apertura sin esperar al order block (el autor lo dejó de hacer en el sexto vídeo).
 - Entrar antes de que cierre la vela de M15, o con el order block de M5, cuando el precio va muy rápido (vídeo de la
-  única vela).
+  única vela), o antes de que cierre un order block muy grande (vídeo del backtest).
+- Operar en Asia: la entrada ideal del 2 de enero (vídeo de la única estrategia para 2026) estaba fuera del horario.
 - Cerrar antes de tiempo por noticias o por ser viernes por la tarde.
 - Bajar el riesgo después de un stop.
-- Cerrar por partes en cada objetivo.
-- Mirar mercados relacionados: el índice del dólar o el S&P 500 (la «SMT» de los vídeos de los stops y de los 6.000 $:
-  salir cuando el S&P ya ha tomado su objetivo y el NASDAQ no).
-- La gestión de cuentas de fondeo del autor (copiar operaciones en varias cuentas, ir más agresivo en los exámenes).
+- Cerrar por partes en cada objetivo, o en la salida por tiempo dejando un 10–20 % hasta el objetivo (vídeo de las
+  salidas). El bot cierra entera.
+- Alargar más allá del objetivo con la salida por tiempo de 1H (vídeo de las salidas): choca con no alargar el TP.
+- Ajustar el stop según la cuenta, o apretarlo para que salga 1 a 2 cuando el objetivo está cerca (vídeos de las
+  pruebas de fondeo y del paso a paso). El bot lo deja siempre detrás del barrido, y la regla candidata del objetivo
+  del 4H no entra si el TP no cabe.
+- Mirar mercados relacionados: el índice del dólar, la libra o el S&P 500 (la «SMT» de los vídeos de los stops, de los
+  6.000 $, del curso desde 0 y de las pruebas de fondeo: salir cuando el otro mercado ya ha tomado su objetivo y este
+  no, o ver un rango que solo existe en uno de los dos).
+- La gestión de cuentas de fondeo del autor: copiar operaciones en varias cuentas, subir el riesgo en los exámenes (un
+  2–3 %, o el 1 % hasta el +4 % y luego lo que falte de una vez) y buscar 1 a 3 en ellos.
 
 ## Cómo aprende el bot (y quién cambia las reglas)
 
@@ -207,13 +251,36 @@ reglas candidatas.
   - diario: también vale tras una vela diaria expansiva a favor, con el objetivo en su máximo («una vela expansiva
     alcista: es muy probable que vayamos a tomar el máximo del día anterior», vídeo de los 6.000 $);
   - salir en la «zona de peligro»: ganando, con máximos nuevos en 4H y en 1H y un barrido en contra en M15 (la
-    salida por tiempo del vídeo de los 6.000 $, que salió justo en el máximo).
+    salida por tiempo del vídeo de los 6.000 $, que salió justo en el máximo);
+  - no perseguir: si la entrada queda lejos del barrido, no entrar y esperar otro order block de la misma idea («nunca
+    entréis persiguiendo el precio», vídeo de las pruebas de fondeo);
+  - comprar solo por debajo de la apertura del día y vender solo por encima (vídeo de la estrategia simple);
+  - entradas solo hasta las 11:00 (curso desde 0) o solo desde las 2:30 (vídeo del backtest);
+  - no entrar antes de la primera noticia fuerte del día: «el precio no tiene por qué llegar a ningún sitio si va a
+    llegar con la noticia» (curso desde 0);
+  - cerrar lo abierto al final del día, a las 17:00, como en el «day trading» y en las cuentas de futuros (curso desde
+    0);
+  - si el objetivo del 4H está más lejos que el TP, dejar correr hasta él: «al menos ratio 2 o el objetivo final» (vídeo
+    de la estrategia simple);
+  - la salida por tiempo: ganando, salir cuando una vela de 4H nueva hace un máximo nuevo (en ventas, un mínimo), porque
+    puede formar un rango al revés (vídeo de las salidas);
+  - ganando, stop a la entrada justo antes de la vela de 4H de las 9:00, porque «es muy probable que vaya a hacer el
+    nuevo alto» (vídeo del backtest);
+  - hasta 3 operaciones al día, y que el TP quepa antes del objetivo del 4H: «no vamos a querer tomar un trade de ratio
+    uno» (vídeo del backtest);
+  - no entrar con el diario o el 4H tomando a favor: «nunca estar vendiendo tras tomar bajos» (vídeo de la única
+    estrategia para 2026);
+  - el modelo del backtest del autor, para comparar: sin sesgo ni diario y hasta 3 operaciones al día (su «+80 %» son
+    11 TP de 13 operaciones en una semana de mayo de 2025, elegida después de verla).
 
   Una candidata solo se propone si mejora la media de R por operación en los dos periodos con al menos 30
-  operaciones en cada uno.
-- **Examen:** `casos/casos.csv` guarda situaciones reales con lo que el bot tenía que hacer: las de los vídeos (35,
+  operaciones en cada uno. «Solo en Londres» y «solo después de la apertura» se miran en cada mercado: el autor opera
+  el forex en Londres y el NASDAQ en la apertura (vídeo «¿Me paso a futuros?»), aunque en otros vídeos compra el NASDAQ
+  en Londres.
+- **Examen:** `casos/casos.csv` guarda situaciones reales con lo que el bot tenía que hacer: las de los vídeos (56,
   buenas y malas) y las que enseñe el equipo. Un caso suspendido es una pista, no una orden: se mira por qué y, si hace
-  falta, se prueba una regla en el laboratorio.
+  falta, se prueba una regla en el laboratorio. Los diez días del backtest del autor son de su modelo sin sesgo ni
+  diario: se examinan con `python3 examen.py --modelo-del-backtest`.
 - **Cuaderno:** las operaciones del equipo, para la parte de psicología (ver «Disciplina»).
 - **Las reglas solo cambian cuando el equipo lo aprueba.** Se apunta aquí con la fecha y se cambian el código y su
   prueba automática.
@@ -226,6 +293,11 @@ No cambian las reglas: hacen que el código haga lo que ya decían.
   puede cerrar como rango (lo dice la definición de rango).
 - Volver a entrar tras un stop cuando la vela de 4H en curso forma otro rango a favor: antes el bot no lo veía mientras
   el rango viejo siguiera activo.
+- Bot de MT5 en vivo: la barra que acaba a las 17:00 se procesa cuando llega la siguiente, y en NASDAQ y oro eso es tras
+  el parón (el viernes, el domingo por la noche). La posición de la cuenta demo se quedaba abierta todo el fin de
+  semana. Ahora se cierra a las 16:55 de Nueva York; la memoria la sigue apuntando al cierre de la barra, como el Python.
+- El aviso al móvil ponía siempre «1 a 2», aunque el TP estuviera en otro sitio por una regla candidata. Ahora pone el
+  ratio de verdad.
 
 ## Lo que todavía no hace
 

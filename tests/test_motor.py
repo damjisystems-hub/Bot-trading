@@ -1,5 +1,6 @@
 import unittest
 from dataclasses import replace
+from datetime import date
 
 from crt.marcos import Marco
 from crt.motor import Ajustes, Operacion, _revisar_salida, probar, sesgo_de_fondo
@@ -25,6 +26,8 @@ HASTA_LAS_9 = [
 ORDER_BLOCK_9_30 = [("2025-03-04 09:15", 102.5), ("2025-03-04 09:30", 104)]
 
 SOLO_4H = Ajustes(sesgo_fijo=+1, diario="ignorar")
+# Velas de 4H de historia que suben y bajan 1 punto (sin order blocks ni rangos), para tener tamaño medio.
+HISTORIA = [("2025-03-02 21:00", 104), ("2025-03-03 01:00", 105), ("2025-03-03 05:00", 104), ("2025-03-03 09:00", 105), ("2025-03-03 13:00", 104), ("2025-03-03 17:00", 105)]
 
 
 class EntradaTrasElCierreDe4H(unittest.TestCase):
@@ -158,10 +161,10 @@ SUBE = HASTA_LAS_9 + ORDER_BLOCK_9_30 + [("2025-03-04 11:00", 125)]
 
 class Banderas(unittest.TestCase):
     def test_apunta_las_banderas_rojas_y_la_nota(self):
-        # La vela de 3H de las 5 cierra a las 8:00 por debajo de la anterior (ruptura bajista) y la
-        # entrada es a las 9:30, justo antes de la apertura.
+        # A las 9:30 la vela de 1H de las 9 ya ha pasado el máximo de la de las 8 (103), la vela de 3H de
+        # las 5 cerró a las 8:00 por debajo de la anterior (ruptura bajista) y es justo antes de la apertura.
         s = probar(camino(SUBE), SIN_COSTES, SOLO_4H).senales[0]
-        self.assertEqual(s.banderas, ("el 3H va en contra", "justo antes de la apertura"))
+        self.assertEqual(s.banderas, ("el 1H está tomando máximos", "el 3H va en contra", "justo antes de la apertura"))
         self.assertEqual((s.h3, s.h1, s.nota), ("rojo", "ambar", "C"))
 
     def test_solo_situaciones_sin_banderas(self):
@@ -263,6 +266,94 @@ class VelaDiariaExpansiva(unittest.TestCase):
     def test_sin_vela_expansiva_no_vale(self):
         res = probar(camino(SUBE), SIN_COSTES, Ajustes(sesgo_fijo=+1, diario="expansiva"))
         self.assertEqual(res.descartadas["el diario no está a favor"], 1)
+
+
+class LoteDeTreceVideos(unittest.TestCase):
+    """Reglas candidatas del lote de 13 vídeos del canal."""
+
+    def test_no_perseguir_espera_un_order_block_mas_cerca_del_barrido(self):
+        # Con velas de 4H pequeñas de historia, la entrada de las 9:30 (stop de 7) queda lejos del barrido. El
+        # precio vuelve a 98,8 y a las 10:45 hay otro order block con el stop a 2,5: esa sí.
+        puntos = HISTORIA + HASTA_LAS_9 + ORDER_BLOCK_9_30 + [
+            ("2025-03-04 09:45", 102),
+            ("2025-03-04 10:15", 99),
+            ("2025-03-04 10:30", 98.8),
+            ("2025-03-04 10:45", 99.5),
+            ("2025-03-04 12:00", 106),
+        ]
+        sin = probar(camino(puntos), SIN_COSTES, SOLO_4H)
+        self.assertEqual([(s.hora, s.decision) for s in sin.senales], [(ny("2025-03-04 09:30"), "entrada")])
+        res = probar(camino(puntos), SIN_COSTES, replace(SOLO_4H, no_perseguir=True))
+        self.assertEqual(
+            [(s.hora, s.decision) for s in res.senales],
+            [(ny("2025-03-04 09:30"), "la entrada queda lejos del barrido"), (ny("2025-03-04 10:45"), "entrada")],
+        )
+        self.assertEqual([(o.resultado, round(o.r, 6)) for o in res.operaciones], [("TP", 2.0)])
+
+    def test_comprar_solo_por_debajo_de_la_apertura_del_dia(self):
+        # El día abre a las 17:00 del lunes en 100 y la compra de las 9:30 es a 104.
+        puntos = [("2025-03-03 17:00", 100)] + SUBE
+        s = probar(camino(puntos), SIN_COSTES, SOLO_4H).senales[0]
+        self.assertIn("compra por encima de la apertura del día", s.banderas)
+        res = probar(camino(puntos), SIN_COSTES, replace(SOLO_4H, apertura_del_dia=True))
+        self.assertEqual(res.descartadas["al otro lado de la apertura del día"], 1)
+
+    def test_no_entrar_antes_de_una_noticia_fuerte(self):
+        ajustes = replace(SOLO_4H, antes_de_noticias=True)
+        antes = probar(camino(SUBE), SIN_COSTES, ajustes, {date(2025, 3, 4): ["10:00 ISM de servicios"]})
+        self.assertEqual(antes.descartadas["antes de una noticia fuerte"], 1)
+        despues = probar(camino(SUBE), SIN_COSTES, ajustes, {date(2025, 3, 4): ["08:30 Nóminas no agrícolas"]})
+        self.assertEqual(despues.senales[0].decision, "entrada")
+
+    def test_cerrar_al_final_del_dia(self):
+        puntos = HASTA_LAS_9 + ORDER_BLOCK_9_30 + [("2025-03-04 17:00", 105), ("2025-03-04 18:00", 106)]
+        self.assertEqual(probar(camino(puntos), SIN_COSTES, SOLO_4H).operaciones, [])  # sigue abierta
+        op = probar(camino(puntos), SIN_COSTES, replace(SOLO_4H, cierre_diario=True)).operaciones[0]
+        self.assertEqual((op.resultado, op.hora_salida), ("Cierre del día", ny("2025-03-04 17:00")))
+        self.assertAlmostEqual(op.r, 1 / 7)
+
+    def test_salida_por_tiempo(self):
+        # Compra a 104 (stop 97). La vela de 4H de las 9 llega a 110; la de las 13, que abre después de la
+        # entrada, supera ese máximo a las 13:45 (110,25): salida por tiempo. Sin la regla, acaba en stop.
+        puntos = HASTA_LAS_9 + ORDER_BLOCK_9_30 + [
+            ("2025-03-04 11:00", 110),
+            ("2025-03-04 13:00", 108),
+            ("2025-03-04 14:00", 111),
+            ("2025-03-04 16:00", 95),
+        ]
+        self.assertEqual(probar(camino(puntos), SIN_COSTES, SOLO_4H).operaciones[0].resultado, "SL")
+        op = probar(camino(puntos), SIN_COSTES, replace(SOLO_4H, salida_por_tiempo=True)).operaciones[0]
+        self.assertEqual((op.resultado, op.hora_salida), ("Salida por tiempo", ny("2025-03-04 13:45")))
+        self.assertAlmostEqual(op.r, 6.25 / 7)
+
+    def test_stop_a_la_entrada_antes_de_la_vela_de_las_9(self):
+        # La compra anticipada de las 8:30 (101,6; stop 98,5) va ganando a las 9:00 y después cae a 97.
+        puntos = AnticipoCon1H.PUNTOS[:-2] + [("2025-03-04 09:00", 103), ("2025-03-04 10:00", 97)]
+        self.assertEqual(probar(camino(puntos), SIN_COSTES, SOLO_4H).operaciones[0].resultado, "SL")
+        op = probar(camino(puntos), SIN_COSTES, replace(SOLO_4H, be_antes_de_las_9=True)).operaciones[0]
+        self.assertEqual((op.resultado, round(op.r, 6)), ("BE", 0.0))
+
+    def test_el_tp_tiene_que_caber_antes_del_objetivo_del_4h(self):
+        ajustes = replace(SOLO_4H, comprobar_objetivo_4h=True)
+        self.assertEqual(probar(camino(SUBE), SIN_COSTES, ajustes).senales[0].decision, "el TP no cabe antes del objetivo del 4H")
+        lejos = [(t, 120 if t == "2025-03-04 02:00" else p) for t, p in HASTA_LAS_9] + ORDER_BLOCK_9_30 + [("2025-03-04 11:00", 125)]
+        self.assertEqual(probar(camino(lejos), SIN_COSTES, ajustes).senales[0].decision, "entrada")
+
+    def test_sin_sesgo(self):
+        en_contra = replace(SOLO_4H, sesgo_fijo=-1)
+        self.assertEqual(probar(camino(SUBE), SIN_COSTES, en_contra).senales[0].decision, "sin sesgo a favor")
+        self.assertEqual(probar(camino(SUBE), SIN_COSTES, replace(en_contra, ignorar_sesgo=True)).senales[0].decision, "entrada")
+
+    def test_no_entrar_con_el_diario_o_el_4h_tomando_a_favor(self):
+        res = probar(camino(HISTORIA + SUBE), SIN_COSTES, replace(SOLO_4H, vetar_tomando=True))
+        self.assertIn("el diario está tomando máximos", res.senales[0].banderas)
+        self.assertEqual(res.descartadas["situación con banderas rojas"], 1)
+
+    def test_dejar_correr_hasta_el_objetivo_del_4h(self):
+        lejos = [(t, 120 if t == "2025-03-04 02:00" else p) for t, p in HASTA_LAS_9] + ORDER_BLOCK_9_30 + [("2025-03-04 11:00", 125)]
+        ajustes = replace(SOLO_4H, tp_hasta_objetivo_4h=True)
+        self.assertEqual(probar(camino(lejos), SIN_COSTES, ajustes).operaciones[0].tp, 120)  # más lejos que 1 a 2
+        self.assertEqual(probar(camino(SUBE), SIN_COSTES, ajustes).operaciones[0].tp, 118)  # el de 110 queda antes
 
 
 class TpEnElObjetivoDe4H(unittest.TestCase):

@@ -13,8 +13,8 @@ Bot de trading con la estrategia CRT («Candle Range Theory») para el NASDAQ, e
 
 **Estado (20-10-2026):**
 - Las reglas, la memoria, el laboratorio, el examen y el cuaderno están programados y comprobados con pruebas
-  automáticas. Ya tienen lo de los doce vídeos: banderas rojas, 25 reglas candidatas, 35 situaciones en el examen y la
-  disciplina del vídeo de psicología.
+  automáticas. Ya tienen lo de los veintitrés vídeos: 13 banderas rojas, 38 reglas candidatas, 56 situaciones en el
+  examen y la disciplina de los vídeos de psicología y de cuentas.
 - **Falta la prueba con datos reales del pasado**, porque faltan los datos (ver «Datos»).
 - El bot de MT5 está escrito, pero no se ha podido compilar aquí: hay que compilarlo en MetaEditor (ver `mt5/LEEME.md`).
 - No opera con dinero real.
@@ -58,7 +58,9 @@ python3 cuaderno.py
   - Con `--memoria` guarda la memoria y con `--comparar` compara las reglas candidatas.
 - `aprender.py`: la prueba más la memoria (qué situaciones ganan y cuáles pierden, y qué habría pasado con las
   descartadas) más el laboratorio. Guarda la memoria en `resultados/`.
-- `examen.py`: el examen con `casos/casos.csv`. Los datos tienen que empezar unos meses antes de los casos.
+- `examen.py`: el examen con `casos/casos.csv`. Los datos tienen que empezar unos meses antes de los casos. Con
+  `--modelo-del-backtest` se examina con el modelo del backtest del autor (sin sesgo ni diario), que es el de los casos
+  «vbacktest-…».
 - `aprender.py --memoria-mt5`: el informe de lo que ha apuntado el bot de MT5 en directo.
 - `cuaderno.py`: el informe de vuestro cuaderno de operaciones (`cuaderno/LEEME.md` explica cómo apuntarlas).
 - Mercados: `nasdaq`, `eurusd` y `oro`.

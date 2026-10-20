@@ -9,7 +9,7 @@
 - **Os frena** (vídeo de psicología): con el tope de pérdida del día entre todos los mercados, deja de avisar y os
   dice que cerréis el gráfico.
 
-**Estado (20-10-2026, versión 1.11):** está escrito, pero no se ha podido compilar en la sesión de Claude. Puede que al
+**Estado (20-10-2026, versión 1.12):** está escrito, pero no se ha podido compilar en la sesión de Claude. Puede que al
 compilarlo salga algún error. Si pasa, copiad el texto del error y pasádselo a Claude (ver la sección 8).
 
 **Por defecto solo avisa.** Nunca opera en una cuenta real, salvo que lo activéis a propósito.
@@ -56,8 +56,9 @@ Un aviso es así:
 
 - **Nota:** A, sin banderas rojas; B, con una; C, con dos o más. Las banderas son lo que el autor no quiere ver al entrar
   (ver `ESTRATEGIA.md`). No impiden entrar: sirven para que veáis el riesgo y para que el bot aprenda si importan.
-- Cuando la operación termina, llega otro aviso con el resultado (TP, SL, salida por 1H, zona de peligro o cierre del
-  viernes) en R.
+- Cuando la operación termina, llega otro aviso con el resultado en R: TP, SL, BE o, con las reglas candidatas, salida
+  por 1H, zona de peligro, salida por tiempo o cierre del día. También el cierre del viernes.
+- El «1 a 2» del aviso es el ratio de verdad de ese TP: con una regla candidata del objetivo del 4H puede ser otro.
 - Si se llega al tope de pérdida del día, llega un aviso (solo uno, aunque el bot esté en los tres gráficos) y ese día ya
   no avisa de más entradas.
 
@@ -95,6 +96,16 @@ Un aviso es así:
 | ToleranciaDiario | Un rango diario que cierra un poco por fuera (hasta esa parte de la vela 1) sigue valiendo, como hace el autor en el gráfico de futuros. 0 = no. | 0 |
 | DiarioValeExpansiva | Tras una vela diaria expansiva a favor (cierra por fuera de la anterior) también vale, con el objetivo en su máximo (en ventas, su mínimo). | No |
 | SalidaPeligro | Sale en la «zona de peligro»: ganando, con máximos nuevos en 4H y en 1H (en ventas, mínimos) y una vela de M15 que barre la anterior y cierra dentro. | No |
+| NoPerseguir | Si la entrada queda lejos del barrido (stop más grande que una vela media de 4H), no entra y espera otro order block de la misma idea. | No |
+| SoloLadoDeLaApertura | Compra solo por debajo de la apertura del día (17:00 de Nueva York) y vende solo por encima. | No |
+| AntesDeNoticias | No entra antes de la primera noticia fuerte del día. | No |
+| CierreDiario | Cierra lo abierto al final de cada día (17:00 de Nueva York), como en las cuentas de futuros. | No |
+| TpHastaObjetivo4H | Si el objetivo del rango de 4H está más lejos que el TP, el TP va hasta él. | No |
+| SalidaPorTiempo | Ganando, sale cuando una vela de 4H nueva supera el extremo de la anterior a favor (en compras, un máximo nuevo). | No |
+| BreakEvenAntesDeLas9 | Ganando, lleva el stop a la entrada justo antes de la vela de 4H de las 9:00. | No |
+| ComprobarObjetivo4H | No entra si el TP queda más allá del objetivo del rango de 4H. | No |
+| VetarTomando | No entra con el diario o el 4H tomando máximos (en compras) o mínimos (en ventas). | No |
+| IgnorarSesgo / IgnorarDiario | Sin mirar el sesgo de fondo o el diario. Las dos juntas, con MaxOperacionesDia = 3, son el modelo del backtest del autor. Solo para pruebas. | No |
 | **Datos y memoria** | | |
 | DesfaseServidorNY | Horas que el reloj del servidor va por delante de Nueva York (ver abajo). | 7 |
 | DiferencialFijoPuntos | 0 = usa el diferencial real del bróker. Con un número, usa siempre ese (sirve para comparar con el Python). | 0 |
@@ -176,7 +187,8 @@ Fantasmas siguiéndose: 2
 - En una cuenta real no opera, salvo con PermitirCuentaReal. Si alguien lo activa, el bot lo grita en el diario de MT5
   al arrancar.
 - Si MT5 se desconecta y una señal le llega con más de 20 minutos de retraso, no avisa ni opera, pero la apunta.
-- El viernes a las 17:00 de Nueva York cierra lo que haya abierto.
+- El viernes cierra lo que haya abierto: en la cuenta, a las 16:55 de Nueva York, para no dejarlo abierto durante el
+  parón del fin de semana (con CierreDiario, cada día). En la memoria lo apunta al cierre de las 17:00, como el Python.
 - **Tope de pérdida del día:** cada bot deja lo que lleva hoy en una variable global de MT5 (Herramientas → Variables
   globales, las que empiezan por `BotCRT.`) y suma las de los demás. Así el tope vale para los tres mercados juntos.
   Cuenta las operaciones del bot, no las que hagáis a mano: esas, apuntadlas en el cuaderno (`cuaderno/`).

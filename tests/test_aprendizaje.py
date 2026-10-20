@@ -7,11 +7,9 @@ from crt import aprendizaje, casos, laboratorio, memoria
 from crt.motor import Ajustes, probar
 from crt.noticias import leer_noticias
 from tests.ayuda import SIN_COSTES, camino, ny
-from tests.test_motor import HASTA_LAS_9, ORDER_BLOCK_9_30, SOLO_4H
+from tests.test_motor import HASTA_LAS_9, HISTORIA, ORDER_BLOCK_9_30, SOLO_4H
 
 SUBE_AL_TP = HASTA_LAS_9 + ORDER_BLOCK_9_30 + [("2025-03-04 11:00", 125), ("2025-03-04 13:00", 125)]
-# Velas de 4H de historia que suben y bajan 1 punto (sin order blocks ni rangos), para tener tamaño medio.
-HISTORIA = [("2025-03-02 21:00", 104), ("2025-03-03 01:00", 105), ("2025-03-03 05:00", 104), ("2025-03-03 09:00", 105), ("2025-03-03 13:00", 104), ("2025-03-03 17:00", 105)]
 
 
 class Memoria(unittest.TestCase):
@@ -91,7 +89,8 @@ class Laboratorio(unittest.TestCase):
     def test_compara_todas_las_candidatas(self):
         barras = camino(SUBE_AL_TP)
         corte, base, pruebas = laboratorio.comprobar(barras, SIN_COSTES, SOLO_4H)
-        self.assertEqual(len(pruebas), len(laboratorio.CANDIDATAS) - 1)  # sin noticias no se prueba esa
+        sin_noticias = [c for _, c in laboratorio.CANDIDATAS if laboratorio.necesita_noticias(c)]
+        self.assertEqual(len(pruebas), len(laboratorio.CANDIDATAS) - len(sin_noticias))  # sin noticias no se prueban esas
         self.assertIn("Laboratorio", laboratorio.texto(corte, base, pruebas, hay_noticias=False))
 
 
@@ -142,7 +141,7 @@ class Examen(unittest.TestCase):
         estados = [casos.examinar(c, res)[0] for c in lista]
         self.assertEqual(estados, ["bien", "mal", "bien", "falta la fecha", "sin datos"])
         self.assertIn("Compró a las 09:30", casos.examinar(lista[0], res)[1][0])
-        self.assertIn("nota C (el 3H va en contra, justo antes de la apertura)", casos.examinar(lista[0], res)[1][0])
+        self.assertIn("nota C (el 1H está tomando máximos, el 3H va en contra, justo antes de la apertura)", casos.examinar(lista[0], res)[1][0])
         self.assertIn("Resumen", casos.texto(lista, res))
 
     def test_el_archivo_de_casos_del_repositorio_se_lee_bien(self):

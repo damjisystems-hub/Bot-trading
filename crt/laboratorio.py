@@ -8,7 +8,7 @@ cambia las reglas: propone. Las cambia el equipo, en ESTRATEGIA.md y en el códi
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, time
 
 from .motor import Ajustes, Operacion, Resultado, probar
 
@@ -42,7 +42,26 @@ CANDIDATAS = (
     # Del vídeo de los 6.000 $:
     ("Diario: también vale tras una vela diaria expansiva a favor", {"diario": "expansiva"}),
     ("Salir en la zona de peligro (máximos nuevos de 4H y 1H y barrido en M15)", {"salida_peligro": True}),
+    # Del lote de 13 vídeos del canal:
+    ("No perseguir: esperar otro order block si la entrada queda lejos", {"no_perseguir": True}),
+    ("Comprar solo por debajo de la apertura del día (y vender por encima)", {"apertura_del_dia": True}),
+    ("Entradas solo hasta las 11:00", {"hasta": time(11, 0)}),
+    ("No entrar antes de una noticia fuerte del día", {"antes_de_noticias": True}),
+    ("Cerrar lo abierto al final del día (17:00), como en futuros", {"cierre_diario": True}),
+    ("Dejar correr hasta el objetivo del 4H si está más lejos que el TP", {"tp_hasta_objetivo_4h": True}),
+    ("Entradas solo desde las 2:30", {"desde": time(2, 30)}),
+    ("Salida por tiempo: ganando, al hacer la vela nueva de 4H un máximo nuevo", {"salida_por_tiempo": True}),
+    ("Stop a la entrada antes de la vela de las 9 (si va ganando)", {"be_antes_de_las_9": True}),
+    ("Como mucho 3 operaciones al día", {"max_operaciones_dia": 3}),
+    ("El TP tiene que caber antes del objetivo del 4H", {"comprobar_objetivo_4h": True}),
+    ("No entrar con el diario o el 4H tomando a favor («nunca vender tras tomar bajos»)", {"vetar_tomando": True}),
+    ("Sin sesgo ni diario, hasta 3 al día (el modelo del backtest del autor)", {"ignorar_sesgo": True, "diario": "ignorar", "max_operaciones_dia": 3}),
 )
+NECESITAN_NOTICIAS = ("sin_noticias", "antes_de_noticias")
+
+
+def necesita_noticias(cambios: dict) -> bool:
+    return any(cambios.get(clave) for clave in NECESITAN_NOTICIAS)
 
 
 def _stats(ops: list[Operacion]) -> dict:
@@ -85,7 +104,7 @@ def comprobar(barras, mercado, ajustes: Ajustes | None = None, noticias: dict | 
     base = Prueba("Las reglas de hoy", base_res, partir(base_res, corte), "")
     pruebas = []
     for nombre, cambios in CANDIDATAS:
-        if cambios.get("sin_noticias") and not noticias:
+        if necesita_noticias(cambios) and not noticias:
             continue
         res = probar(barras, mercado, replace(ajustes, **cambios), noticias)
         periodos = partir(res, corte)
@@ -114,5 +133,7 @@ def texto(corte: datetime, base: Prueba, pruebas: list[Prueba], hay_noticias: bo
             f"    después: {c2['n']:>4} op. · acierto {100 * c2['acierto']:>3.0f} % · media {_r(c2['media'])} · total {_r(c2['total'])}",
         ]
     if not hay_noticias:
-        lineas.append("- No operar los días de noticias fuertes: no se ha probado (faltan las noticias, ver --noticias).")
+        for nombre, cambios in CANDIDATAS:
+            if necesita_noticias(cambios):
+                lineas.append(f"- {nombre}: no se ha probado (faltan las noticias, ver --noticias).")
     return "\n".join(lineas)

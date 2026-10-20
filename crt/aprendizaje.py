@@ -115,13 +115,16 @@ def _psicologia(tomadas: list[dict]) -> list[str]:
     return lineas
 
 
-def _franja(f: dict) -> str:
+def _vela_4h(f: dict) -> str:
+    """En qué vela de 4H fue la entrada («si ves que la vela de las nueve es la que se te da mejor…»)."""
     hora = f["hora_ny"][11:16]
     if hora <= "05:00":
-        return "1:00–5:00 (Londres)"
-    if hora <= "09:30":
-        return "5:00–9:30"
-    return "tras la apertura"
+        return "vela de la 1 (Londres)"
+    if hora <= "09:00":
+        return "vela de las 5"
+    if hora <= "13:00":
+        return "vela de las 9 (Nueva York)"
+    return "más tarde"
 
 
 def informe(filas: list[dict]) -> str:
@@ -136,7 +139,7 @@ def informe(filas: list[dict]) -> str:
     if tomadas:
         lineas += [
             *_grupos("Por sesión:", tomadas, lambda f: f["sesion"]),
-            *_grupos("Por franja horaria (Nueva York):", tomadas, _franja),
+            *_grupos("Por vela de 4H de la entrada (hora de Nueva York):", tomadas, _vela_4h),
             *_grupos("Por día de la semana:", tomadas, lambda f: f["dia_semana"]),
             *_grupos("Por escenario:", tomadas, lambda f: f["escenario"]),
             *_grupos("Por cómo se puso en verde el 4H:", tomadas, lambda f: f["via_4h"]),
