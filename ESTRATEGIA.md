@@ -9,31 +9,28 @@ Si cambia una regla, se cambia aquí, en el código y en su prueba automática.
 
 | Qué | Decisión |
 |---|---|
-| Mercados | NASDAQ, EUR/USD y oro (XAU/USD). |
+| Mercados | NASDAQ, EUR/USD, GBP/USD (añadido el 20-10-2026) y oro (XAU/USD). |
 | Tipo de bot | De reglas de velas en varios marcos de tiempo. Primero solo avisa; el equipo decide si entra. |
 | Stop y TP | Stop detrás del barrido; TP al doble de esa distancia (1 a 2). |
 | Sesgo de fondo | Lo calcula el bot con el mensual, el semanal y el diario; el equipo lo confirma cada lunes. |
 | Londres o tras la apertura | El bot avisa en los dos casos y marca cuál es; la prueba con el pasado dirá cuál compensa. |
-| Espera tras la apertura | Ninguna entrada en los primeros minutos tras las 9:30 de Nueva York, en los tres mercados. |
+| Espera tras la apertura | Ninguna entrada en los primeros minutos tras las 9:30 de Nueva York, en todos los mercados. |
 | Order block | La vela verde tiene que ser más fuerte que la roja anterior: cuerpo más grande y cierre por encima de donde abrió la roja (en ventas, al revés). |
 | Cuentas | Primero demo, luego cuenta propia y después fondeo. |
 | Plataformas | MT5 y TradingView. El bot monta sus propias velas, así que los rangos no dependen de la plataforma. |
 
+## Decidido por el equipo (20-10-2026)
+
+| Qué | Decisión |
+|---|---|
+| Velas de 4H | Las de la 1, las 5 y las 9 de Nueva York (el día de 17:00 a 17:00) en **todos** los mercados, también en el NASDAQ. Es lo que sale en los gráficos de forex de los vídeos («a las 11» abren las de 1H, 2H y 6H, pero no la de 4H) y en el vídeo de los 6.000 $. El laboratorio ya no prueba las de futuros de las 18:00 (las de las 2, las 6 y las 10 del vídeo de los 150.000 $). |
+| Fases de cuenta | Se mantiene: demo, cuenta propia y después fondeo, aunque el autor recomienda fondeo primero (vídeos de los 4.500 $, del mejor año y del plan de 0 a 100.000 $). |
+| Libra (GBP/USD) | Se añade como cuarto mercado, como la opera el autor (sus noticias fuertes son las de la libra y las del dólar). Para lo demás, se siguen los vídeos. |
+
 ## Pendiente de decidir
 
-- **A qué hora empiezan vuestras velas de 4H en el NASDAQ.** En EUR/USD ya está claro: en los gráficos de forex de los
-  vídeos nuevos (el curso desde 0, el paso a paso, la estrategia simple, el backtest y el de las salidas) son las de la
-  1, las 5 y las 9 de Nueva York, y en el de las salidas dice que «a las 11» abren las de 1H, 2H y 6H pero no la de 4H,
-  algo que solo cuadra con el día de 17:00 a 17:00, como en MT5. En el NASDAQ sigue la duda: en el vídeo de los 150.000 $
-  la vela de 4H de la apertura es «la de las 6», que es lo que sale en el gráfico de futuros de TradingView (el día
-  empieza a las 18:00 y las velas son las de las 2, las 6 y las 10); en el de los 6.000 $, en cambio, una vela de 4H
-  abre a las 5:00. El bot usa las de las 17:00 y el laboratorio prueba también las de las 18:00 (`HoraInicio4H` en MT5).
-- **El orden de las fases de cuenta.** El equipo decidió demo, cuenta propia y fondeo. El autor recomienda lo contrario
-  (vídeos de los 4.500 $, del mejor año y del plan de 0 a 100.000 $): fondeo primero y capital propio solo con lo ganado
-  en fondeo y un buen colchón («mil veces prefiero una cuenta de fondeo que está en break even»). ¿Lo mantenéis?
-- **La libra (GBP/USD).** El autor opera el euro y la libra, y casi nunca el oro. El bot hace NASDAQ, EUR/USD y oro.
-  Los ejemplos de la libra del vídeo de las pruebas de fondeo no están en el examen por eso.
 - **Las fechas de los casos del examen** que no la tienen, y confirmar las deducidas (ver `casos/casos.csv`).
+- **El riesgo y el tope del día en las cuentas de futuros**, antes de llegar a esa fase (ver «Disciplina»).
 
 ## Horario
 
@@ -159,7 +156,8 @@ en la cabeza.
 se saltó y la emoción. El informe del cuaderno califica cada día por el proceso, avisa de las ganadas saltándose el plan
 (son las que crean malos hábitos), de las operaciones de venganza tras una pérdida y de los días que se pasó el tope.
 
-**Fases de cuenta** (decidido: demo, propia y fondeo; el autor recomienda otro orden, ver «Pendiente de decidir»).
+**Fases de cuenta** (decidido y confirmado el 20-10-2026: demo, propia y fondeo, aunque el autor recomienda fondeo
+primero).
 Cuándo se pasa de una a otra lo decide el equipo. Como referencia:
 
 - el autor estuvo 6 meses en demo, se hizo un colchón con lo ganado antes de subir el tamaño, subió poco a poco y operó
@@ -180,7 +178,8 @@ Son propuestas; se ajustan con la prueba con el pasado:
 - horario de entradas: de 1:00 a 13:00 de Nueva York (en forex el autor empieza a las 2:30, «antes de eso nunca», y da
   la sesión por terminada a las 11: el laboratorio prueba las dos cosas);
 - riesgo: 1 % de la cuenta por operación;
-- tope de pérdida del día: 3 R entre los tres mercados (en MT5, sumados; en la prueba con el pasado, cada mercado solo);
+- tope de pérdida del día: 3 R entre todos los mercados (en MT5, sumados; en la prueba con el pasado, cada mercado solo);
+- diferencial y colchón de la libra: un poco más que los del euro, porque se mueve más (valores típicos, no medidos);
 - diferencial y colchón del stop de cada mercado: `crt/mercados.py` (valores típicos, no medidos en vuestro bróker);
 - un stop más corto que 3 diferenciales no se opera.
 
@@ -210,7 +209,9 @@ reglas candidatas.
   del 4H no entra si el TP no cabe.
 - Mirar mercados relacionados: el índice del dólar, la libra o el S&P 500 (la «SMT» de los vídeos de los stops, de los
   6.000 $, del curso desde 0 y de las pruebas de fondeo: salir cuando el otro mercado ya ha tomado su objetivo y este
-  no, o ver un rango que solo existe en uno de los dos).
+  no, o ver un rango que solo existe en uno de los dos). Aunque el bot ya opera el euro y la libra, cada mercado va por
+  su lado. Por eso la venta de la libra del 7-10-2025 (vídeo de las pruebas de fondeo), cuyo rango solo existía por la
+  SMT con el euro y que entró de noche, no está en el examen.
 - La gestión de cuentas de fondeo del autor: copiar operaciones en varias cuentas, subir el riesgo en los exámenes (un
   2–3 %, o el 1 % hasta el +4 % y luego lo que falte de una vez) y buscar 1 a 3 en ellos.
 
@@ -247,7 +248,6 @@ reglas candidatas.
   - solo situaciones sin banderas rojas;
   - dejar el día al perder 1 R, y un día de pausa tras 3 stops seguidos (vídeo de psicología);
   - rango diario aunque cierre un poco por fuera (vídeo de la única vela);
-  - velas de 4H del gráfico de futuros (empiezan a las 18:00);
   - diario: también vale tras una vela diaria expansiva a favor, con el objetivo en su máximo («una vela expansiva
     alcista: es muy probable que vayamos a tomar el máximo del día anterior», vídeo de los 6.000 $);
   - salir en la «zona de peligro»: ganando, con máximos nuevos en 4H y en 1H y un barrido en contra en M15 (la
@@ -277,8 +277,8 @@ reglas candidatas.
   operaciones en cada uno. «Solo en Londres» y «solo después de la apertura» se miran en cada mercado: el autor opera
   el forex en Londres y el NASDAQ en la apertura (vídeo «¿Me paso a futuros?»), aunque en otros vídeos compra el NASDAQ
   en Londres.
-- **Examen:** `casos/casos.csv` guarda situaciones reales con lo que el bot tenía que hacer: las de los vídeos (56,
-  buenas y malas) y las que enseñe el equipo. Un caso suspendido es una pista, no una orden: se mira por qué y, si hace
+- **Examen:** `casos/casos.csv` guarda situaciones reales con lo que el bot tenía que hacer: las de los vídeos (60,
+  buenas y malas, 4 de ellas de la libra) y las que enseñe el equipo. Un caso suspendido es una pista, no una orden: se mira por qué y, si hace
   falta, se prueba una regla en el laboratorio. Los diez días del backtest del autor son de su modelo sin sesgo ni
   diario: se examinan con `python3 examen.py --modelo-del-backtest`.
 - **Cuaderno:** las operaciones del equipo, para la parte de psicología (ver «Disciplina»).
@@ -301,5 +301,5 @@ No cambian las reglas: hacen que el código haga lo que ya decían.
 
 ## Lo que todavía no hace
 
-- En la prueba con el pasado, aplicar el tope de pérdida sumando los tres mercados (cada mercado va solo).
+- En la prueba con el pasado, aplicar el tope de pérdida sumando todos los mercados (cada mercado va solo).
 - Operar contra el sesgo, usar rangos de 8H o 2H, y las demás cosas de «Lo que el bot no copia».

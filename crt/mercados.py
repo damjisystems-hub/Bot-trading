@@ -19,5 +19,7 @@ class Mercado:
 MERCADOS = {
     "nasdaq": Mercado("NASDAQ", diferencial=1.5, colchon=3.0, decimales=1),
     "eurusd": Mercado("EUR/USD", diferencial=0.00008, colchon=0.0001, decimales=5, monedas=("USD", "EUR")),
+    # La libra se mueve más que el euro: algo más de diferencial y de colchón (añadida el 20-10-2026).
+    "gbpusd": Mercado("GBP/USD", diferencial=0.00012, colchon=0.00015, decimales=5, monedas=("USD", "GBP")),
     "oro": Mercado("Oro (XAU/USD)", diferencial=0.3, colchon=0.5, decimales=2),
 }

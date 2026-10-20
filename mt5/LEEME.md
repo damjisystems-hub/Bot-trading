@@ -9,7 +9,7 @@
 - **Os frena** (vídeo de psicología): con el tope de pérdida del día entre todos los mercados, deja de avisar y os
   dice que cerréis el gráfico.
 
-**Estado (20-10-2026, versión 1.12):** está escrito, pero no se ha podido compilar en la sesión de Claude. Puede que al
+**Estado (20-10-2026, versión 1.13):** está escrito, pero no se ha podido compilar en la sesión de Claude. Puede que al
 compilarlo salga algún error. Si pasa, copiad el texto del error y pasádselo a Claude (ver la sección 8).
 
 **Por defecto solo avisa.** Nunca opera en una cuenta real, salvo que lo activéis a propósito.
@@ -26,11 +26,12 @@ compilarlo salga algún error. Si pasa, copiad el texto del error y pasádselo a
 6. Volved a MT5. En el panel «Navegador», en «Asesores expertos», aparece **BotCRT**. Si no aparece, botón derecho →
    «Actualizar».
 
-## 2. Ponerlo en los tres mercados
+## 2. Ponerlo en los cuatro mercados
 
 1. Abrid un gráfico de cada mercado:
    - NASDAQ: según el bróker se llama NAS100, US100 o USTEC;
    - EURUSD;
+   - GBPUSD (la libra, añadida el 20-10-2026);
    - XAUUSD (oro).
 2. Poned los gráficos en M15. No es obligatorio, porque el bot usa siempre las barras de 15 minutos, pero así se ve lo
    mismo que él.
@@ -59,7 +60,7 @@ Un aviso es así:
 - Cuando la operación termina, llega otro aviso con el resultado en R: TP, SL, BE o, con las reglas candidatas, salida
   por 1H, zona de peligro, salida por tiempo o cierre del día. También el cierre del viernes.
 - El «1 a 2» del aviso es el ratio de verdad de ese TP: con una regla candidata del objetivo del 4H puede ser otro.
-- Si se llega al tope de pérdida del día, llega un aviso (solo uno, aunque el bot esté en los tres gráficos) y ese día ya
+- Si se llega al tope de pérdida del día, llega un aviso (solo uno, aunque el bot esté en los cuatro gráficos) y ese día ya
   no avisa de más entradas.
 
 ## 4. Parámetros
@@ -70,7 +71,7 @@ Un aviso es así:
 | Modo | «Solo avisos» u «Operar en una cuenta demo». | Solo avisos |
 | PermitirCuentaReal | Deja operar en una cuenta real. **No lo activéis** sin hablarlo antes. | No |
 | RiesgoPct | Lo que se arriesga en cada operación, en % del balance. Sirve para calcular los lotes. | 1 |
-| NombreMercado | El nombre que sale en los avisos y en la memoria. Vacío = el del símbolo. Para que coincida con el Python: NASDAQ, EUR/USD u Oro (XAU/USD). | vacío |
+| NombreMercado | El nombre que sale en los avisos y en la memoria. Vacío = el del símbolo. Para que coincida con el Python: NASDAQ, EUR/USD, GBP/USD u Oro (XAU/USD). | vacío |
 | **Reglas** | | |
 | Ratio | El TP está a tantas veces lo que se arriesga. | 2 |
 | EsperaAperturaMin | Minutos sin entrar después de la apertura de las 9:30 de Nueva York. | 45 |
@@ -82,7 +83,7 @@ Un aviso es así:
 | DiarioBastaNoRojo | Si está activado, basta con que el diario no vaya en contra. Lo decidido es que vaya a favor. | No |
 | ComprobarObjetivoDiario | No entra si el TP queda más allá del objetivo del diario. | Sí |
 | PerdidaMaxDiaR | Tope de pérdida del día, en R, **sumando todos los mercados** en los que esté puesto el bot (1 R = el 1 % con el riesgo por defecto). Al llegar, ese día ya no entra. 0 = sin tope. | 3 |
-| HoraInicio4H | Hora de Nueva York a la que empiezan las velas de 4H: 17 en MT5 y forex (velas de la 1, las 5 y las 9); 18 en el gráfico de futuros de TradingView (velas de las 2, las 6 y las 10). | 17 |
+| HoraInicio4H | Hora de Nueva York a la que empiezan las velas de 4H. Decidido el 20-10-2026: 17, es decir, las velas de la 1, las 5 y las 9, en todos los mercados. No lo cambiéis. | 17 |
 | **Reglas candidatas** | Apagadas hasta que el laboratorio las pruebe y el equipo las apruebe. | |
 | StopAEntradaEnR | Al llegar a +X R, el stop pasa a la entrada. 0 = no. | 0 |
 | Vela1Minima | La vela 1 del rango de 4H tiene que ser al menos X veces el tamaño medio de las velas de 4H. 0 = no. | 0 |
@@ -111,7 +112,7 @@ Un aviso es así:
 | DiferencialFijoPuntos | 0 = usa el diferencial real del bróker. Con un número, usa siempre ese (sirve para comparar con el Python). | 0 |
 | MesesHistoria | Meses de historia que repasa al arrancar, para saber cómo está el mercado. | 24 |
 | EscribirMemoriaHistorica | Apunta también en la memoria lo que habría hecho en esa historia. | No |
-| ExportarNoticias | Al arrancar, guarda las noticias fuertes de USD y EUR en `noticias.csv` para el laboratorio. | No |
+| ExportarNoticias | Al arrancar, guarda las noticias fuertes de USD, EUR y GBP en `noticias.csv` para el laboratorio. | No |
 | AniosNoticias | Años de noticias que exporta. | 3 |
 | NumeroMagico | Número con el que el bot marca sus órdenes. | 20261020 |
 
@@ -122,6 +123,7 @@ Un aviso es así:
 | NASDAQ con 1 decimal | 21480.5 | 30 | 3 puntos del índice |
 | NASDAQ con 2 decimales | 21480.50 | 300 | 3 puntos del índice |
 | EUR/USD | 1.08345 | 10 | 1 pip |
+| GBP/USD | 1.26530 | 15 | 1,5 pips (la libra se mueve más) |
 | Oro | 2650.25 | 50 | 0,50 $ |
 
 **La hora del servidor.** Casi todos los brókeres van 7 horas por delante de Nueva York (GMT+2 en invierno, GMT+3 en
@@ -190,7 +192,7 @@ Fantasmas siguiéndose: 2
 - El viernes cierra lo que haya abierto: en la cuenta, a las 16:55 de Nueva York, para no dejarlo abierto durante el
   parón del fin de semana (con CierreDiario, cada día). En la memoria lo apunta al cierre de las 17:00, como el Python.
 - **Tope de pérdida del día:** cada bot deja lo que lleva hoy en una variable global de MT5 (Herramientas → Variables
-  globales, las que empiezan por `BotCRT.`) y suma las de los demás. Así el tope vale para los tres mercados juntos.
+  globales, las que empiezan por `BotCRT.`) y suma las de los demás. Así el tope vale para todos los mercados juntos.
   Cuenta las operaciones del bot, no las que hagáis a mano: esas, apuntadlas en el cuaderno (`cuaderno/`).
 - En el probador de estrategias de MT5 no hay calendario de noticias ni avisos al móvil.
 
@@ -207,7 +209,7 @@ Copiad el texto exacto del error (con su número de línea) y pasádselo a Claud
 
 1. Exportad de MT5 las barras de M15 del mismo periodo (ver el `README.md` del repositorio).
 2. Poned en el bot:
-   - DiferencialFijoPuntos con el diferencial de `crt/mercados.py`: NASDAQ con 1 decimal, 15; EUR/USD, 8; oro, 30;
+   - DiferencialFijoPuntos con el diferencial de `crt/mercados.py`: NASDAQ con 1 decimal, 15; EUR/USD, 8; GBP/USD, 12; oro, 30;
    - ColchonStopPuntos con el colchón de la tabla;
    - EscribirMemoriaHistorica activado.
 3. Pasadle a Claude la memoria y las barras. Las dos memorias tienen que tener las mismas entradas, salvo en los

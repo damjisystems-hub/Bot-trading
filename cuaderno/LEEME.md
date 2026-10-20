@@ -11,7 +11,7 @@ Abrid `operaciones.csv` con Excel o Numbers y añadid una fila por operación:
 | Columna | Qué poner | Ejemplo |
 |---|---|---|
 | fecha | El día y, si queréis, la hora de Nueva York. | 2026-10-20 10:30 |
-| mercado | nasdaq, eurusd u oro. | nasdaq |
+| mercado | nasdaq, eurusd, gbpusd u oro. | nasdaq |
 | direccion | compra o venta. | compra |
 | cuenta | demo, propia o fondeo. | demo |
 | siguio_el_plan | si o no. Sed sinceros: es lo que más enseña. | no |

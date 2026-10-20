@@ -27,7 +27,7 @@
 //
 // Si cambias una regla aquí, cámbiala también en crt/ (y al revés): los dos tienen que decidir igual.
 #property copyright   "Damji Systems"
-#property version     "1.12"
+#property version     "1.13"
 #property description "Bot CRT: avisa de las entradas de la estrategia CRT y apunta la memoria."
 #property description "Por defecto solo avisa. No opera en cuentas reales."
 
@@ -73,7 +73,7 @@ input int      ColchonStopPuntos        = 30;           // Colchón del stop det
 input bool     DiarioBastaNoRojo        = false;        // Diario: basta con que no vaya en contra
 input bool     ComprobarObjetivoDiario  = true;         // No entrar si el TP queda más allá del objetivo del diario
 input double   PerdidaMaxDiaR           = 3;            // Tope de pérdida del día entre todos los mercados, en R (0 = sin tope)
-input int      HoraInicio4H             = 17;           // Las velas de 4H empiezan a esta hora de NY (17 = MT5; 18 = futuros)
+input int      HoraInicio4H             = 17;           // Las velas de 4H empiezan a esta hora de NY (17: las de la 1, las 5 y las 9, lo decidido)
 
 input group "Reglas candidatas (apagadas hasta que el laboratorio las apruebe)"
 input double   StopAEntradaEnR          = 0;            // Stop a la entrada al llegar a +X R (0 = no)
@@ -1251,6 +1251,8 @@ string LeerNoticiasDelDia(const long dia)
    RecogerNoticias("USD", desde, hasta, orden, fechas, horas, monedas, nombres);
    if(StringFind(_Symbol, "EUR") >= 0)
       RecogerNoticias("EUR", desde, hasta, orden, fechas, horas, monedas, nombres);
+   if(StringFind(_Symbol, "GBP") >= 0)
+      RecogerNoticias("GBP", desde, hasta, orden, fechas, horas, monedas, nombres);
    string texto = "";
    for(int k = 0; k < ArraySize(orden); k++)
      {
@@ -1308,7 +1310,7 @@ int PrimeraHoraDeNoticias(const string texto)
    return primera;
   }
 
-// Exporta las noticias fuertes de USD y EUR a MQL5/Files/BotCRT/noticias.csv para el laboratorio.
+// Exporta las noticias fuertes de USD, EUR y GBP a MQL5/Files/BotCRT/noticias.csv para el laboratorio.
 void ExportarNoticiasCsv(void)
   {
    if(MQLInfoInteger(MQL_TESTER) != 0)
@@ -1321,8 +1323,8 @@ void ExportarNoticiasCsv(void)
    datetime ahora = TimeTradeServer();
    long trozo = (long)365 * SEG_DIA;
    long inicio = (long)ahora - (long)AniosNoticias * trozo;
-   string mons[2] = {"USD", "EUR"};
-   for(int c = 0; c < 2; c++)
+   string mons[3] = {"USD", "EUR", "GBP"};
+   for(int c = 0; c < 3; c++)
       for(long a = inicio; a < (long)ahora; a += trozo)
         {
          long b = a + trozo - 1;

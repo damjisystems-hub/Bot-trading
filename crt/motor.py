@@ -105,8 +105,8 @@ class Ajustes:
     diario: str = "verde"  # "verde": hace falta un rango diario a favor; "no_rojo": basta con que no vaya en contra; "expansiva": también vale tras una vela diaria expansiva a favor; "ignorar": solo para pruebas
     comprobar_objetivo_diario: bool = True  # no entrar si el TP queda más allá del objetivo del diario
     max_operaciones_dia: int = 2  # por mercado
-    perdida_max_dia_r: float | None = 3.0  # al perder tanto en un día (en R) no se entra más ese día; en MT5 suma los tres mercados, aquí solo este
-    inicio_4h: int = 17  # hora de Nueva York a la que empiezan las velas de 4H (17: MT5 y forex; 18: futuros en TradingView)
+    perdida_max_dia_r: float | None = 3.0  # al perder tanto en un día (en R) no se entra más ese día; en MT5 suma todos los mercados, aquí solo este
+    inicio_4h: int = 17  # hora de Nueva York a la que empiezan las velas de 4H: 17 (las de la 1, las 5 y las 9), lo decidido el 20-10-2026
     # Reglas candidatas: apagadas hasta que el laboratorio demuestre que ayudan y el equipo las apruebe.
     stop_a_entrada_en_r: float | None = None  # al llegar a +X R, el stop pasa a la entrada
     vela1_minima: float | None = None  # el rango de 4H necesita una vela 1 de al menos X veces el tamaño medio

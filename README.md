@@ -1,6 +1,6 @@
 # Bot CRT
 
-Bot de trading con la estrategia CRT («Candle Range Theory») para el NASDAQ, el EUR/USD y el oro. Tiene cuatro partes:
+Bot de trading con la estrategia CRT («Candle Range Theory») para el NASDAQ, el EUR/USD, la libra (GBP/USD) y el oro. Tiene cuatro partes:
 
 - **El cerebro** (`crt/`): las reglas de la estrategia, en Python, con las banderas rojas de los vídeos.
 - **El aprendizaje**:
@@ -13,7 +13,7 @@ Bot de trading con la estrategia CRT («Candle Range Theory») para el NASDAQ, e
 
 **Estado (20-10-2026):**
 - Las reglas, la memoria, el laboratorio, el examen y el cuaderno están programados y comprobados con pruebas
-  automáticas. Ya tienen lo de los veintitrés vídeos: 13 banderas rojas, 38 reglas candidatas, 56 situaciones en el
+  automáticas. Ya tienen lo de los veintitrés vídeos: 13 banderas rojas, 37 reglas candidatas, 60 situaciones en el
   examen y la disciplina de los vídeos de psicología y de cuentas.
 - **Falta la prueba con datos reales del pasado**, porque faltan los datos (ver «Datos»).
 - El bot de MT5 está escrito, pero no se ha podido compilar aquí: hay que compilarlo en MetaEditor (ver `mt5/LEEME.md`).
@@ -63,7 +63,7 @@ python3 cuaderno.py
   «vbacktest-…».
 - `aprender.py --memoria-mt5`: el informe de lo que ha apuntado el bot de MT5 en directo.
 - `cuaderno.py`: el informe de vuestro cuaderno de operaciones (`cuaderno/LEEME.md` explica cómo apuntarlas).
-- Mercados: `nasdaq`, `eurusd` y `oro`.
+- Mercados: `nasdaq`, `eurusd`, `gbpusd` y `oro`.
 - Las cifras dependen de los datos y de los costes supuestos de cada mercado (`crt/mercados.py`).
 
 ## Datos

@@ -21,7 +21,7 @@ NOMBRE_SESGO = {+1: "compras", -1: "ventas", 0: "sin sesgo"}
 @dataclass
 class Caso:
     id: str
-    mercado: str  # nasdaq, eurusd u oro
+    mercado: str  # una de las claves de MERCADOS: nasdaq, eurusd, gbpusd u oro
     desde: datetime | None  # hora de Nueva York
     hasta: datetime | None
     esperado: str

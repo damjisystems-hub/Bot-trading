@@ -4,6 +4,7 @@ import unittest
 from datetime import date
 
 from crt import aprendizaje, casos, laboratorio, memoria
+from crt.mercados import MERCADOS
 from crt.motor import Ajustes, probar
 from crt.noticias import leer_noticias
 from tests.ayuda import SIN_COSTES, camino, ny
@@ -77,6 +78,13 @@ class ReglasCandidatas(unittest.TestCase):
         self.assertEqual(leer_noticias(ruta), {date(2025, 3, 7): ["08:30 Nóminas no agrícolas"]})
         self.assertEqual(len(leer_noticias(ruta, ("USD", "EUR"))), 2)
 
+    def test_la_libra_mira_las_noticias_de_la_libra_y_del_dolar(self):
+        ruta = os.path.join(tempfile.mkdtemp(), "noticias.csv")
+        with open(ruta, "w", encoding="utf-8") as f:
+            f.write("fecha,hora,moneda,evento,importancia\n2025-03-07,08:30,USD,Nóminas,alta\n2025-03-06,07:00,GBP,Banco de Inglaterra,alta\n2025-03-06,08:15,EUR,BCE,alta\n")
+        noticias = leer_noticias(ruta, MERCADOS["gbpusd"].monedas)
+        self.assertEqual(noticias, {date(2025, 3, 7): ["08:30 Nóminas"], date(2025, 3, 6): ["07:00 Banco de Inglaterra"]})
+
 
 class Laboratorio(unittest.TestCase):
     def test_veredictos(self):
@@ -147,7 +155,8 @@ class Examen(unittest.TestCase):
     def test_el_archivo_de_casos_del_repositorio_se_lee_bien(self):
         lista = casos.leer_casos(os.path.join(os.path.dirname(__file__), "..", "casos", "casos.csv"))
         self.assertGreater(len(lista), 10)
-        self.assertTrue(all(c.mercado in ("nasdaq", "eurusd", "oro") for c in lista))
+        self.assertTrue(all(c.mercado in MERCADOS for c in lista))
+        self.assertTrue(any(c.mercado == "gbpusd" for c in lista))
 
 
 if __name__ == "__main__":

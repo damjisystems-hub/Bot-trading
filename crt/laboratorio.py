@@ -38,7 +38,7 @@ CANDIDATAS = (
     ("Dejar el día al perder 1 R (un stop)", {"perdida_max_dia_r": 1.0}),
     ("Un día de pausa tras 3 stops seguidos", {"pausa_tras_stops": 3}),
     ("Diario: rango aunque cierre un poco fuera", {"tolerancia_diario": 0.1}),
-    ("Velas de 4H de futuros (empiezan a las 18:00)", {"inicio_4h": 18}),
+    # Las velas de 4H de futuros (empiezan a las 18:00) ya no se prueban: el equipo decidió las de las 9 (20-10-2026).
     # Del vídeo de los 6.000 $:
     ("Diario: también vale tras una vela diaria expansiva a favor", {"diario": "expansiva"}),
     ("Salir en la zona de peligro (máximos nuevos de 4H y 1H y barrido en M15)", {"salida_peligro": True}),

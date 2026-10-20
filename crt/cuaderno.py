@@ -7,7 +7,7 @@ cuaderno/operaciones.csv (se abre con Excel o Numbers) y este informe lo cuenta.
 
 Columnas:
   fecha           AAAA-MM-DD o AAAA-MM-DD HH:MM (hora de Nueva York)
-  mercado         nasdaq, eurusd u oro
+  mercado         nasdaq, eurusd, gbpusd u oro
   direccion       compra o venta
   cuenta          demo, propia o fondeo
   siguio_el_plan  si o no
@@ -28,7 +28,7 @@ from datetime import datetime
 COLUMNAS = ["fecha", "mercado", "direccion", "cuenta", "siguio_el_plan", "regla_rota", "emocion", "resultado", "r", "nota"]
 CUENTAS = ("demo", "propia", "fondeo")
 MAXIMO_OPERACIONES_DIA = 2  # por mercado, como el bot
-TOPE_DE_PERDIDA_R = 3.0  # entre los tres mercados, como el bot
+TOPE_DE_PERDIDA_R = 3.0  # entre todos los mercados, como el bot
 MESES_DE_DEMO_DEL_AUTOR = 6  # vídeo de «+100k al año»; en el del plan de 0 a 100.000 $ recomienda 3 (unas 60 sesiones)
 
 
