@@ -25,8 +25,9 @@ de fiarse de él. Por este orden:
    - Abridla con el dinero que pensáis poner después en la cuenta propia: así los lotes y las pérdidas se ven de verdad.
    - Comprobad la hora del servidor: cuando en Nueva York son las 9:30, el reloj de «Observación de mercado» tiene que
      marcar las 16:30. Si marca otra hora, cambiad DesfaseServidorNY (sección 4).
-2. **MT5 en el ordenador.** Se descarga de la web oficial, metatrader5.com. Tiene versión para Mac, con MetaEditor
-   dentro. Entrad con la cuenta demo.
+2. **MT5 en el ordenador.** Se descarga de la web oficial, metatrader5.com. Tiene versión para Mac (funciona dentro de
+   Wine), con MetaEditor dentro. Entrad con la cuenta demo: en el título de la ventana tiene que poner «Demo», no
+   «Live» ni «Real».
 3. **Instalar y compilar el bot** (sección 1). Hasta que no compile con 0 errores, no funciona. Si sale algún error,
    copiad el texto y pasádselo a Claude: lo arregla y os da el archivo nuevo.
 4. **Exportar la historia y pasársela a Claude** (`README.md`, «Datos»): barras de M1 o de M15 de los cuatro mercados,
@@ -89,14 +90,26 @@ de fiarse de él. Por este orden:
 
 ## 1. Instalarlo (una vez)
 
-1. En MT5: **Archivo → Abrir carpeta de datos**.
-2. Entrad en `MQL5` → `Experts` y copiad ahí `BotCRT.mq5`.
-3. En MT5: **Herramientas → MetaQuotes Language Editor** (o la tecla F4).
-4. En el panel de la izquierda de MetaEditor, abrid `Experts` → `BotCRT.mq5`.
-5. Pulsad **Compilar** (o la tecla F7).
+1. Copiad `BotCRT.mq5` en la carpeta `MQL5/Experts` de MT5. Es la buena si dentro están `Advisors`, `Examples` y
+   `Free Robots`.
+   - **En Windows:** en MT5, **Archivo → Abrir carpeta de datos** → `MQL5` → `Experts`, y pegadlo ahí.
+   - **En Mac:** MT5 funciona dentro de Wine, y la ventana de «Abrir carpeta de datos» es de Wine: no deja soltar
+     archivos del Finder. Usad el Finder:
+     1. Menú **Ir → Ir a la carpeta…** (Cmd+Mayús+G), pegad
+        `~/Library/Application Support/net.metaquotes.wine.metatrader5/drive_c/Program Files` y pulsad Intro. Si dice
+        que no existe, pegad `~/Library/Application Support` y entrad en la carpeta que lleve «metaquotes» o
+        «MetaTrader» en el nombre → `drive_c` → `Program Files`.
+     2. Entrad en la carpeta de MT5 (`MetaTrader 5` o la del bróker) → `MQL5` → `Experts`.
+     3. En la carpeta del bot, seleccionad `BotCRT.mq5` y Cmd+C; en `Experts`, Cmd+V.
+   - **Si no encontráis la carpeta:** abrid `BotCRT.mq5` con TextEdit (botón derecho → Abrir con), Cmd+A y Cmd+C. En
+     MetaEditor (paso 2): **Archivo → Nuevo → Asesor experto (plantilla)**, nombre `BotCRT`, «Siguiente» hasta
+     «Finalizar». En el archivo nuevo, **Edición → Seleccionar todo** y **Edición → Pegar**, y guardad.
+2. Abrid MetaEditor: en MT5, **Herramientas → MetaQuotes Language Editor** (o la tecla F4; en Mac, fn+F4).
+3. En el panel de la izquierda de MetaEditor, abrid `Experts` → `BotCRT.mq5`.
+4. Pulsad **Compilar** (o la tecla F7).
    - Abajo, en la pestaña «Errores», tiene que poner **0 errores**.
    - Los avisos («warnings») no importan.
-6. Volved a MT5. En el panel «Navegador», en «Asesores expertos», aparece **BotCRT**. Si no aparece, botón derecho →
+5. Volved a MT5. En el panel «Navegador», en «Asesores expertos», aparece **BotCRT**. Si no aparece, botón derecho →
    «Actualizar».
 
 ## 2. Ponerlo en los cuatro mercados
