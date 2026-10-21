@@ -9,7 +9,7 @@
 - **Os frena** (vídeo de psicología): con el tope de pérdida del día entre todos los mercados, deja de avisar y os
   dice que cerréis el gráfico.
 
-**Estado (21-10-2026, versión 1.17, con avisos por Telegram):** está escrito, pero no se ha podido compilar en la sesión de Claude. Puede que al
+**Estado (22-10-2026, versión 1.18):** funciona en la demo de MetaQuotes desde el 22-10-2026, con avisos por Telegram. La 1.18 solo añade dos reglas candidatas, apagadas; quien tenga la 1.17 no necesita cambiarla. Lo nuevo no se ha podido compilar en la sesión de Claude. Puede que al
 compilarlo salga algún error. Si pasa, copiad el texto del error y pasádselo a Claude (ver la sección 8).
 
 **Por defecto solo avisa.** Nunca opera en una cuenta real, salvo que lo activéis a propósito.
@@ -211,6 +211,8 @@ Un aviso es así:
 | ComprobarObjetivo4H | No entra si el TP queda más allá del objetivo del rango de 4H. | No |
 | VetarTomando | No entra con el diario o el 4H tomando máximos (en compras) o mínimos (en ventas). | No |
 | IgnorarSesgo / IgnorarDiario | Sin mirar el sesgo de fondo o el diario. Las dos juntas, con MaxOperacionesDia = 3, son el modelo del backtest del autor. Solo para pruebas. | No |
+| Anticipo4HSinEsperar1H | El 4H se da por bueno antes de que cierre su vela sin esperar a un rango de 1H: basta con el barrido, que el precio vuelva dentro de la vela anterior y el order block de M15 («nos toma el alto, empieza a reaccionar, creamos el order block»). Acerca el bot al autor, pero no gana (ver `ESTRATEGIA.md`, «Copiar al autor sin engañarnos»). | No |
+| SesgoSinVetoMensual | El sesgo lo decide el semanal aunque el mensual vaya en contra (hoy, si se contradicen, no opera). Misma conclusión que la anterior. | No |
 | **Autoaprendizaje** | | |
 | UsarReglasAprendidas | Usa las reglas aprendidas (`reglas_aprendidas.txt`): no entra en las situaciones que ha aprendido que pierden. Solo quitan entradas. | Sí |
 | ExportarBarras | Al arrancar y una vez al día, guarda los precios de M15 en `barras_ny_<mercado>.csv` para que el bot aprenda. | Sí |

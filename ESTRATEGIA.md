@@ -39,7 +39,8 @@ Si cambia una regla, se cambia aquí, en el código y en su prueba automática.
 - **El riesgo y el tope del día en las cuentas de futuros**, antes de llegar a esa fase (ver «Disciplina»).
 - **Cuándo se pasa de la demo a la cuenta propia** (el autor recomienda al menos 3 meses, unas 60 sesiones).
 - **Qué hacer con el resultado de la prueba con datos reales** (abajo): con las reglas de hoy, pierde. El
-  autoaprendizaje no lo arreglará si la estrategia no tiene ventaja: solo puede quitar las peores situaciones.
+  autoaprendizaje no lo arreglará si la estrategia no tiene ventaja: solo puede quitar las peores situaciones. Copiar
+  mejor al autor tampoco lo ha arreglado (22-10-2026, ver «Copiar al autor sin engañarnos»).
 
 ## Prueba con datos reales (21-10-2026)
 
@@ -164,6 +165,49 @@ precios). Por limpieza, su caso pasa a búsqueda: quedan 20 de búsqueda y 12 gu
 - búsqueda: 7 de 20 bien; de los 16 casos en los que el autor entra, el bot entra igual en 3;
 - guardados: 3 de 12 bien; de los 9 en los que el autor entra, el bot entra igual en ninguno;
 - los casos en los que el autor no entra los acierta todos, pero solo porque el bot casi nunca entra.
+
+### Lo que se encontró en los casos de búsqueda (22-10-2026)
+
+Caso a caso, vela a vela, con lo que dice el autor en sus vídeos:
+
+- **El bot espera un rango de 1H cerrado para anticipar el 4H; el autor, no** (6 casos). «Nos toma el alto, empieza
+  a reaccionar, creamos el order block y aquí pondríamos nuestra venta» (estrategia simple); «utilizamos H1 para no
+  tener que esperar a que la vela H4 cierre» (modelo de entrada). Regla candidata: **4H anticipado sin esperar al
+  1H** (barrido, vuelta dentro de la vela anterior y order block de M15).
+- **El sesgo:** el bot no opera si el semanal y el mensual se contradicen (3 casos). Los vídeos no son del todo
+  coherentes: a veces el autor sigue el objetivo semanal (2-1-2026 y 18-9-2025) y a veces opera con el diario contra
+  el semanal (17-11-2025 y 8-10-2025). Regla candidata: **manda el semanal sin el veto del mensual**.
+- **Probadas y descartadas:** el order block como lo define el autor («cerramos por encima de la última vela
+  bajista», sin mirar el cuerpo) empeora (6 de 20); la dirección solo por el diario también da 12 de 20, pero compra
+  donde el autor dijo que no había que operar; la tolerancia del diario no cambia nada.
+- **Sin arreglo honrado** (4 casos): en dos el autor entró sin order block; en otro el bot ve la vela de 4H distinta;
+  el del curso desde 0 es una demostración sin diario.
+- **Con las dos reglas candidatas:** 12 de 20 en búsqueda (antes 7), y sigue sin entrar en los 4 en los que el autor no
+  entra.
+
+### Comprobación final, una sola vez (22-10-2026)
+
+**Los casos guardados:** 3 de 12, igual que con las reglas de hoy. Las correcciones no sirven en los casos que no se
+miraron. Allí lo que bloquea casi siempre es el diario: los días en que el autor compraba el NASDAQ, para el bot el
+diario iba en contra.
+
+**La prueba de dinero** (los cuatro mercados juntos, con el tope de 3 R al día entre todos):
+
+| | 2005–2011 | 2012–2020 | 2021–2025 | 2026 (ene–oct) | Los tres tramos |
+|---|---|---|---|---|---|
+| Reglas de hoy | 368 op., −0,11 R | 449 op., −0,13 R | 248 op., −0,03 R | 53 op., −0,24 R | 1.065 op., −106 R (−0,10 ± 0,04) |
+| Las dos del autor | 1.080 op., −0,05 R | 1.378 op., −0,14 R | 759 op., −0,06 R | 152 op., −0,07 R | 3.217 op., −303 R (−0,09 ± 0,02) |
+
+(La media es por operación; ± es el error típico.)
+
+- **¿Mejora en los tres tramos?** No: mejora en 2005–2011 y empeora en los otros dos.
+- **¿Gana?** No: pierde unos 0,09 R por operación en más de 3.000 operaciones, y eso ya no puede ser mala suerte.
+- Con las dos reglas el bot hace el triple de operaciones y pierde lo mismo en cada una.
+
+**Conclusión:** las dos reglas se quedan como candidatas, apagadas. Acercar el bot a lo que hace el autor, regla a
+regla, no lo convierte en ganador. Si hay ventaja, estaría en lo que el autor decide a ojo, sobre todo en cómo lee la
+dirección del día y los mercados relacionados (ver «Lo que el bot no copia»). Eso solo se puede medir con todas sus
+operaciones reales, las buenas y las malas, con fecha y hora.
 
 ## Horario
 

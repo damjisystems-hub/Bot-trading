@@ -20,6 +20,9 @@ Bot de trading con la estrategia CRT («Candle Range Theory») para el NASDAQ, e
   operaciones y unos −106 R), y un rango de 4H solo se comporta como el azar. Ninguna idea de los vídeos lo arregla y el
   examen con los vídeos sale 8 de 32. Los detalles están en `ESTRATEGIA.md`, «Prueba con datos reales». No se usa con
   dinero real mientras pierda.
+- **Copiar mejor al autor (22-10-2026):** con dos reglas sacadas de sus vídeos, el bot hace lo mismo que él en 12 de 20
+  casos de búsqueda (antes 7), pero en los casos guardados sigue en 3 de 12 y en 20 años sigue perdiendo (−0,09 R por
+  operación en 3.217). Quedan como candidatas, apagadas (`ESTRATEGIA.md`, «Copiar al autor sin engañarnos»).
 - El bot de MT5 compila y funciona en la demo de MetaQuotes desde el 22-10-2026, con avisos por Telegram (ver
   `mt5/LEEME.md`).
 - **Autoaprendizaje (21-10-2026):** el bot aprende solo de sus peores situaciones y se corrige, con frenos para no
