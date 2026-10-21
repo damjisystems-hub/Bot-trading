@@ -61,10 +61,11 @@ TOPE_DE_PERDIDA = "tope de pérdida del día"
 LEJOS = "la entrada queda lejos del barrido"
 AL_OTRO_LADO = "al otro lado de la apertura del día"
 ANTES_DE_NOTICIAS = "antes de una noticia fuerte"
+REGLA_APRENDIDA = "regla aprendida"  # una situación que el bot ha aprendido a no tomar (ver crt/autoaprendizaje.py)
 DECISIONES = (
     ENTRADA, SIN_SESGO, DIARIO_EN_CONTRA, YA_ABIERTA, ESCENARIO_NO_PERMITIDO, VELA1_PEQUENA, NOTICIAS,
     TOPE_DEL_DIA, PASO_EL_BARRIDO, STOP_CORTO, TP_NO_CABE, H3_NO_ACOMPANA, H1_NO_ACOMPANA, CON_BANDERAS,
-    OBJETIVO_CERCA, PAUSA, TOPE_DE_PERDIDA, LEJOS, AL_OTRO_LADO, ANTES_DE_NOTICIAS, TP_NO_CABE_4H,
+    OBJETIVO_CERCA, PAUSA, TOPE_DE_PERDIDA, LEJOS, AL_OTRO_LADO, ANTES_DE_NOTICIAS, TP_NO_CABE_4H, REGLA_APRENDIDA,
 )  # fmt: skip
 
 # Cómo termina una operación.
@@ -93,6 +94,43 @@ BANDERAS = (
 )  # fmt: skip
 MEDIA_HORA_ANTES = time(9, 0)
 VELA_DE_LAS_9 = time(9, 0)
+
+# Lo que describe cada situación, con los mismos textos que la memoria. Las reglas aprendidas son «no entrar si
+# <atributo> es <valor>» (ver crt/autoaprendizaje.py). «bandera» vale si la situación lleva esa bandera roja.
+DIAS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+SESGO = {+1: "a favor", 0: "neutral", -1: "en contra"}
+ATRIBUTOS = (
+    "direccion", "sesion", "vela_4h", "dia_semana", "sesgo_semanal", "sesgo_mensual", "diario", "via_diario", "via_4h",
+    "h3", "h1", "escenario", "nota", "bandera",
+)  # fmt: skip
+
+
+def vela_4h_de(hora: datetime) -> str:
+    """En qué vela de 4H cae una entrada al cierre de una barra que termina a esta hora de Nueva York."""
+    t = hora.time()
+    if t <= time(5, 0):
+        return "vela de la 1 (Londres)"
+    if t <= time(9, 0):
+        return "vela de las 5"
+    if t <= time(13, 0):
+        return "vela de las 9 (Nueva York)"
+    return "más tarde"
+
+
+def nota_de(banderas) -> str:
+    """A: sin banderas rojas; B: con una; C: con dos o más."""
+    return "ABC"[min(len(banderas), 2)]
+
+
+def vetada(atributos: dict, vetos) -> bool:
+    """¿La situación cae en alguna regla aprendida? Cada veto es (atributo, valor)."""
+    for atributo, valor in vetos:
+        if atributo == "bandera":
+            if valor in atributos.get("bandera", ()):
+                return True
+        elif atributos.get(atributo) == valor:
+            return True
+    return False
 
 
 @dataclass
@@ -132,6 +170,7 @@ class Ajustes:
     max_banderas: int | None = None  # como mucho tantas banderas rojas (1: nota A o B)
     pausa_tras_stops: int | None = None  # tras tantos stops seguidos, el resto del día y el siguiente sin operar
     tolerancia_diario: float = 0.0  # un rango diario que cierra hasta esta parte de la vela 1 por fuera sigue contando
+    vetos: tuple = ()  # reglas aprendidas: situaciones en las que no se entra, como ("vela_4h", "vela de las 5")
     sesgo_fijo: int | None = None  # solo para pruebas: +1 compras, -1 ventas
 
 
@@ -186,7 +225,7 @@ class Senal:
     @property
     def nota(self) -> str:
         """A: sin banderas rojas; B: con una; C: con dos o más."""
-        return "ABC"[min(len(self.banderas), 2)]
+        return nota_de(self.banderas)
 
 
 @dataclass
@@ -376,6 +415,7 @@ class _Recorrido:
         niveles = _niveles(d, precio, setup, self.mercado, a.ratio, a.tp_objetivo_4h, a.tp_hasta_objetivo_4h)
         colores = {"h3": self.h3.color(d, precio), "h1": self.h1.color(d, precio)}
         banderas = self._banderas(d, hora, precio, colores, niveles)
+        atributos = self._atributos(hora, d, color_diario, diario, setup, colores, banderas)
         if not a.ignorar_sesgo and self._sesgo() != d:
             decision = SIN_SESGO
         elif not diario_vale:
@@ -388,7 +428,7 @@ class _Recorrido:
             decision = LEJOS
         else:
             self.usados.update(setup.ids)  # solo cuenta el primer order block de cada idea
-            decision = self._filtros(setup, hora, colores, banderas)
+            decision = self._filtros(setup, hora, colores, banderas, atributos)
             if decision is None:
                 if isinstance(niveles, str):
                     decision = niveles
@@ -441,7 +481,26 @@ class _Recorrido:
             banderas.append(B_LEJOS_DEL_BARRIDO)
         return tuple(banderas)
 
-    def _filtros(self, setup: Setup, hora: datetime, colores: dict, banderas: tuple) -> str | None:
+    def _atributos(self, hora, d, color_diario, diario, setup, colores, banderas) -> dict:
+        """Lo que describe la situación, con los textos de la memoria (para las reglas aprendidas)."""
+        return {
+            "direccion": "compra" if d > 0 else "venta",
+            "sesion": sesion(hora),
+            "vela_4h": vela_4h_de(hora),
+            "dia_semana": DIAS[hora.weekday()],
+            "sesgo_semanal": SESGO[direccion_de(self.w1.ultimo) * d],
+            "sesgo_mensual": SESGO[direccion_de(self.mn.ultimo) * d],
+            "diario": color_diario,
+            "via_diario": diario.via if diario is not None else "",
+            "via_4h": setup.via,
+            "h3": colores["h3"],
+            "h1": colores["h1"],
+            "escenario": setup.escenario,
+            "nota": nota_de(banderas),
+            "bandera": banderas,
+        }
+
+    def _filtros(self, setup: Setup, hora: datetime, colores: dict, banderas: tuple, atributos: dict | None = None) -> str | None:
         a = self.ajustes
         dia = dia_de_trading(hora - QUINCE_MIN)
         if a.escenarios is not None and setup.escenario not in a.escenarios:
@@ -466,6 +525,8 @@ class _Recorrido:
             return CON_BANDERAS  # «nunca estar vendiendo tras tomar bajos»
         if a.apertura_del_dia and any(b in banderas for b in B_APERTURA_DEL_DIA.values()):
             return AL_OTRO_LADO
+        if a.vetos and atributos is not None and vetada(atributos, a.vetos):
+            return REGLA_APRENDIDA
         if self.pausa_hasta is not None and dia <= self.pausa_hasta:
             return PAUSA
         if a.perdida_max_dia_r and self.r_por_dia.get(dia, 0.0) <= -a.perdida_max_dia_r:  # 0 o None: sin tope, como en MT5

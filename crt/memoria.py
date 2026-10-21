@@ -11,7 +11,7 @@ from __future__ import annotations
 import csv
 import os
 
-from .motor import Resultado
+from .motor import DIAS, SESGO, Resultado
 
 COLUMNAS = [
     "mercado", "hora_ny", "direccion", "decision", "sesion", "dia_semana",
@@ -19,8 +19,6 @@ COLUMNAS = [
     "vela1_rel", "stop_rel", "objetivo_r", "noticias", "banderas", "nota",
     "entrada", "stop", "tp", "resultado", "r", "mfe_r", "mae_r", "tomada",
 ]  # fmt: skip
-DIAS = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
-SESGO = {+1: "a favor", 0: "neutral", -1: "en contra"}
 
 
 def _numero(x: float | None) -> str:

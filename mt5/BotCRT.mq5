@@ -23,11 +23,15 @@
 // Las reglas candidatas (las de los vídeos que aún no están aprobadas) están apagadas: no perseguir el
 // precio, el lado de la apertura del día, las noticias, el cierre del día, las salidas por tiempo…
 //
+// Autoaprendizaje (decidido por el dueño el 21-10-2026): el bot exporta sus precios cada día
+// (barras_ny_<mercado>.csv); autoaprender.py busca sus peores situaciones, las prueba con frenos y escribe
+// reglas_aprendidas.txt; el bot lo lee cada día y deja de entrar en esas situaciones. Solo quitan entradas.
+//
 // Por defecto SOLO AVISA. Nunca opera en una cuenta real salvo que se active a propósito.
 //
 // Si cambias una regla aquí, cámbiala también en crt/ (y al revés): los dos tienen que decidir igual.
 #property copyright   "Damji Systems"
-#property version     "1.15"
+#property version     "1.16"
 #property description "Bot CRT: avisa de las entradas de la estrategia CRT y apunta la memoria."
 #property description "Por defecto solo avisa. No opera en cuentas reales."
 
@@ -111,6 +115,11 @@ input bool     VetarTomando             = false;        // No entrar con el diar
 input bool     IgnorarSesgo             = false;        // Sin sesgo de fondo (con IgnorarDiario: el modelo del backtest del autor)
 input bool     IgnorarDiario            = false;        // Sin mirar el diario (solo para pruebas)
 
+input group "Autoaprendizaje"
+input bool     UsarReglasAprendidas     = true;         // Usar las reglas aprendidas (reglas_aprendidas.txt; solo quitan entradas)
+input bool     ExportarBarras           = true;         // Exportar cada día los precios para que el bot aprenda (barras_ny_*.csv)
+input int      MesesExportar            = 60;           // Meses de precios que exportar
+
 input group "Datos y memoria"
 input int      DesfaseServidorNY        = 7;            // Horas que el servidor va por delante de Nueva York
 input int      DiferencialFijoPuntos    = 0;            // Diferencial fijo en puntos (0 = el del bróker)
@@ -176,6 +185,7 @@ input long     NumeroMagico             = 20261020;     // Número de las órden
 #define DEC_APERTURA     18
 #define DEC_ANTES_NOTICIAS 19
 #define DEC_NO_CABE_4H   20
+#define DEC_APRENDIDA    21
 
 #define RES_NINGUNO       0
 #define RES_TP            1
@@ -789,6 +799,10 @@ bool      g_tardia = false;
 string    g_mercado = "";
 string    g_ruta_memoria = "";
 string    g_ruta_historia = "";      // lo que habría hecho en la historia (con EscribirMemoriaHistorica)
+string    g_veto_atr[];              // reglas aprendidas de este mercado: «no entrar si <atributo> es <valor>»
+string    g_veto_val[];
+long      g_dia_reglas = -1;         // día de trading en el que se leyeron por última vez
+long      g_dia_exportado = -1;      // día de trading en el que se exportaron los precios por última vez
 datetime  g_pend_hora[];             // señales en directo que seguían abiertas al cerrar MT5 (ver GuardarPendientes)
 int       g_pend_dir[];
 bool      g_pend_avisada[];
@@ -897,6 +911,8 @@ string TextoDecision(const int d)
          return "antes de una noticia fuerte";
       case DEC_NO_CABE_4H:
          return "el TP no cabe antes del objetivo del 4H";
+      case DEC_APRENDIDA:
+         return "regla aprendida";
      }
    return "";
   }
@@ -2142,8 +2158,76 @@ int Banderas(const int d, const datetime hora, const double precio, const int c3
    return b;
   }
 
+// En qué vela de 4H cae una entrada al cierre de una barra que termina a esta hora (crt/motor.py: vela_4h_de).
+string TextoVela4H(const datetime hora)
+  {
+   int m = MinutosDelDia(hora);
+   if(m <= 300)
+      return "vela de la 1 (Londres)";
+   if(m <= 540)
+      return "vela de las 5";
+   if(m <= 780)
+      return "vela de las 9 (Nueva York)";
+   return "más tarde";
+  }
+
+// Lo que describe la situación, con los textos de la memoria (crt/motor.py: _atributos y ATRIBUTOS).
+string ValorAtributo(const string atributo, const int d, const datetime hora, const int sesgo_sem, const int sesgo_men,
+                     const int color_diario, const int via_diario, const int via_4h, const int c3, const int c1,
+                     const int escenario, const int banderas)
+  {
+   if(atributo == "direccion")
+      return (d > 0) ? "compra" : "venta";
+   if(atributo == "sesion")
+      return Sesion(hora);
+   if(atributo == "vela_4h")
+      return TextoVela4H(hora);
+   if(atributo == "dia_semana")
+      return DiaSemana(hora);
+   if(atributo == "sesgo_semanal")
+      return TextoSesgo(sesgo_sem);
+   if(atributo == "sesgo_mensual")
+      return TextoSesgo(sesgo_men);
+   if(atributo == "diario")
+      return TextoColor(color_diario);
+   if(atributo == "via_diario")
+      return TextoVia(via_diario);
+   if(atributo == "via_4h")
+      return TextoVia(via_4h);
+   if(atributo == "h3")
+      return TextoColor(c3);
+   if(atributo == "h1")
+      return TextoColor(c1);
+   if(atributo == "escenario")
+      return TextoEscenario(escenario);
+   if(atributo == "nota")
+      return Nota(banderas);
+   return "";
+  }
+
+// ¿La situación cae en alguna regla aprendida? (crt/motor.py: vetada). «bandera» vale si la lleva.
+bool Vetada(const int d, const datetime hora, const int sesgo_sem, const int sesgo_men, const int color_diario,
+            const int via_diario, const int via_4h, const int c3, const int c1, const int escenario, const int banderas)
+  {
+   for(int k = 0; k < ArraySize(g_veto_atr); k++)
+     {
+      if(g_veto_atr[k] == "bandera")
+        {
+         for(int j = 0; j < NUM_BANDERAS; j++)
+            if((banderas & (1 << j)) != 0 && TextoBandera(1 << j) == g_veto_val[k])
+               return true;
+        }
+      else
+         if(ValorAtributo(g_veto_atr[k], d, hora, sesgo_sem, sesgo_men, color_diario, via_diario, via_4h, c3, c1,
+                          escenario, banderas) == g_veto_val[k])
+            return true;
+     }
+   return false;
+  }
+
 // Reglas candidatas, pausa y topes del día (crt/motor.py: _filtros), en el mismo orden.
-int Filtros(const Setup &s, const datetime hora, const Vela &b, const int c3, const int c1, const int banderas)
+int Filtros(const Setup &s, const datetime hora, const Vela &b, const int c3, const int c1, const int banderas,
+            const int d, const int sesgo_sem, const int sesgo_men, const int color_diario, const int via_diario)
   {
    long dia = DiaDeTrading(b.inicio);
    if(!g_esc_ok[s.escenario])
@@ -2170,6 +2254,9 @@ int Filtros(const Setup &s, const datetime hora, const Vela &b, const int c3, co
       return DEC_BANDERAS;   // «nunca estar vendiendo tras tomar bajos»
    if(SoloLadoDeLaApertura && (banderas & (BAN_APERTURA_COMPRA | BAN_APERTURA_VENTA)) != 0)
       return DEC_APERTURA;
+   if(UsarReglasAprendidas && ArraySize(g_veto_atr) > 0
+      && Vetada(d, hora, sesgo_sem, sesgo_men, color_diario, via_diario, s.via, c3, c1, s.escenario, banderas))
+      return DEC_APRENDIDA;
    if(g_pausa_hasta >= 0 && dia <= g_pausa_hasta)
       return DEC_PAUSA;
    if(PerdidaMaxDiaR > 0 && ResultadoDelDia(dia) <= -PerdidaMaxDiaR)
@@ -2240,7 +2327,8 @@ void Mirar(const Vela &b, const int d)
             else
               {
                MarcarIdea(g_usadas, s);      // solo cuenta el primer order block de cada idea
-               decision = Filtros(s, hora, b, c3, c1, banderas);
+               decision = Filtros(s, hora, b, c3, c1, banderas, d, g_w1.DireccionUltimo() * d, g_mn.DireccionUltimo() * d,
+                                  color_diario, hay_diario ? sd.via : VIA_NINGUNA);
                if(decision == DEC_NINGUNA)
                  {
                   if(motivo_niveles != DEC_NINGUNA)
@@ -2490,7 +2578,120 @@ bool CargarHistoria(void)
    ComprobarHoraDelServidor();
    g_listo = true;
    GuardarPendientes();
+   ExportarBarrasNY();
    return procesadas > 0;
+  }
+
+// ───────────────────────── Autoaprendizaje ─────────────────────────
+
+bool TieneRegla(const string &atr[], const string &val[], const string a, const string v)
+  {
+   for(int k = 0; k < ArraySize(atr); k++)
+      if(atr[k] == a && val[k] == v)
+         return true;
+   return false;
+  }
+
+// Lee las reglas aprendidas de este mercado (MQL5/Files/BotCRT/reglas_aprendidas.txt, que escribe
+// autoaprender.py) y, si se pide, avisa al móvil de lo que ha aprendido y de lo que ha desaprendido.
+void LeerReglasAprendidas(const bool avisar)
+  {
+   g_dia_reglas = DiaDeTrading(AhoraNY());
+   string atr[];
+   string val[];
+   int h = FileOpen("BotCRT\\reglas_aprendidas.txt", FILE_READ | FILE_BIN);
+   if(h != INVALID_HANDLE)
+     {
+      uchar bytes[];
+      int tam = (int)FileSize(h);
+      if(tam > 0)
+         FileReadArray(h, bytes, 0, tam);
+      FileClose(h);
+      string lineas[];
+      int nl = StringSplit(CharArrayToString(bytes, 0, WHOLE_ARRAY, CP_UTF8), '\n', lineas);
+      for(int k = 0; k < nl; k++)
+        {
+         string l = lineas[k];
+         StringReplace(l, "\r", "");
+         if(StringLen(l) > 0 && StringGetCharacter(l, 0) == 0xFEFF)
+            l = StringSubstr(l, 1);   // la marca de UTF-8 del principio
+         StringTrimLeft(l);
+         StringTrimRight(l);
+         if(StringLen(l) == 0 || StringGetCharacter(l, 0) == '#')
+            continue;
+         string partes[];
+         if(StringSplit(l, ';', partes) < 3 || partes[0] != g_mercado)
+            continue;
+         int n = ArraySize(atr);
+         ArrayResize(atr, n + 1);
+         ArrayResize(val, n + 1);
+         atr[n] = partes[1];
+         val[n] = partes[2];
+        }
+     }
+   if(avisar && UsarReglasAprendidas)
+     {
+      for(int k = 0; k < ArraySize(atr); k++)
+         if(!TieneRegla(g_veto_atr, g_veto_val, atr[k], val[k]))
+            Notificar("BOT CRT · " + g_mercado + " · ha aprendido: no entrar si " + atr[k] + " es «" + val[k] + "»");
+      for(int k = 0; k < ArraySize(g_veto_atr); k++)
+         if(!TieneRegla(atr, val, g_veto_atr[k], g_veto_val[k]))
+            Notificar("BOT CRT · " + g_mercado + " · ha desaprendido (ya no se cumple): " + g_veto_atr[k] + " es «" + g_veto_val[k] + "»");
+     }
+   ArrayResize(g_veto_atr, ArraySize(atr));
+   ArrayResize(g_veto_val, ArraySize(val));
+   for(int k = 0; k < ArraySize(atr); k++)
+     {
+      g_veto_atr[k] = atr[k];
+      g_veto_val[k] = val[k];
+     }
+   if(ArraySize(atr) > 0)
+      Print("BotCRT: ", ArraySize(atr), " reglas aprendidas para ", g_mercado, UsarReglasAprendidas ? "." : " (sin usar: UsarReglasAprendidas está apagado).");
+  }
+
+// Exporta los precios de M15, en hora de Nueva York, a MQL5/Files/BotCRT/barras_ny_<mercado>.csv, para que
+// autoaprender.py repase todo lo vivido. Se hace al arrancar y una vez al día.
+void ExportarBarrasNY(void)
+  {
+   g_dia_exportado = DiaDeTrading(AhoraNY());
+   if(!ExportarBarras || MQLInfoInteger(MQL_TESTER) != 0)
+      return;
+   datetime abierta = iTime(_Symbol, PERIOD_M15, 0);
+   if(abierta == 0)
+      return;
+   datetime desde = (datetime)((long)abierta - (long)MesesExportar * 31 * SEG_DIA);
+   MqlRates r[];
+   int n = CopyRates(_Symbol, PERIOD_M15, desde, abierta, r);
+   if(n <= 0)
+      return;
+   string ruta = "BotCRT\\barras_ny_" + NombreDeArchivo(g_mercado) + ".csv";
+   int h = FileOpen(ruta, FILE_WRITE | FILE_BIN);
+   if(h == INVALID_HANDLE)
+     {
+      Print("BotCRT: no puedo escribir ", ruta, " (error ", GetLastError(), ").");
+      return;
+     }
+   EscribirUtf8(h, "<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\r\n");
+   string bloque = "";
+   int escritas = 0;
+   for(int k = 0; k < n; k++)
+     {
+      if(r[k].time >= abierta)
+         break;   // la barra en curso aún no ha cerrado
+      datetime ny = (datetime)((long)r[k].time - (long)DesfaseServidorNY * SEG_HORA);
+      bloque += TimeToString(ny, TIME_DATE) + "\t" + TimeToString(ny, TIME_SECONDS) + "\t" + DoubleToString(r[k].open, _Digits)
+                + "\t" + DoubleToString(r[k].high, _Digits) + "\t" + DoubleToString(r[k].low, _Digits) + "\t"
+                + DoubleToString(r[k].close, _Digits) + "\r\n";
+      escritas++;
+      if(escritas % 1000 == 0)
+        {
+         EscribirUtf8(h, bloque);
+         bloque = "";
+        }
+     }
+   EscribirUtf8(h, bloque);
+   FileClose(h);
+   Print("BotCRT: ", escritas, " barras de 15 minutos exportadas a MQL5/Files/", ruta, " para el autoaprendizaje.");
   }
 
 // Procesa las barras de 15 minutos que se hayan cerrado desde la última vez.
@@ -2518,6 +2719,11 @@ void RevisarBarrasNuevas(void)
       g_ultima_barra = nuevas[k].time;
      }
    GuardarPendientes();
+   long hoy = DiaDeTrading(AhoraNY());
+   if(hoy != g_dia_reglas)
+      LeerReglasAprendidas(true);   // una vez al día: lo que haya aprendido (o desaprendido) autoaprender.py
+   if(hoy != g_dia_exportado)
+      ExportarBarrasNY();
    AvisoDeTope();
    ActualizarPanel();
   }
@@ -2629,6 +2835,10 @@ void ActualizarPanel(void)
    t += "Racha:   " + TextoRacha() + "\n";
    t += "Operación: " + TextoOperacion() + "\n";
    t += "Fantasmas siguiéndose: " + IntegerToString(ArraySize(g_fantasmas)) + "\n";
+   t += "Reglas aprendidas: " + IntegerToString(ArraySize(g_veto_atr)) + (UsarReglasAprendidas ? "" : " (apagadas)");
+   for(int k = 0; k < ArraySize(g_veto_atr) && k < 3; k++)
+      t += (k == 0 ? " · no entra si " : "; ") + g_veto_atr[k] + " es «" + g_veto_val[k] + "»";
+   t += "\n";
    t += "Última señal: " + (g_ultima_senal == "" ? "ninguna desde que arrancó" : g_ultima_senal);
    Comment(t);
   }
@@ -2723,6 +2933,7 @@ int OnInit(void)
    AvisoDeCuenta();
    if(ExportarNoticias)
       ExportarNoticiasCsv();
+   LeerReglasAprendidas(false);   // antes de la historia, para que la repase con las mismas reglas
    g_listo = CargarHistoria();
    EventSetTimer(5);
    ActualizarPanel();

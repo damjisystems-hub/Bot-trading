@@ -5,6 +5,7 @@ import os
 import re
 import unittest
 from dataclasses import fields
+from datetime import datetime
 
 from crt import memoria, motor
 
@@ -14,6 +15,11 @@ RUTA_EA = os.path.join(os.path.dirname(__file__), "..", "mt5", "BotCRT.mq5")
 def _fuente() -> str:
     with open(RUTA_EA, encoding="utf-8-sig") as f:
         return f.read()
+
+
+def _textos_de_cualquiera(funcion: str) -> set:
+    cuerpo = re.search(rf"string {funcion}\((.*?)\n  }}", _fuente(), re.S)[1]
+    return set(re.findall(r'return "([^"]+)";', cuerpo))
 
 
 def _textos_de(funcion: str) -> set:
@@ -57,6 +63,7 @@ PARAMETROS = {
     "max_banderas": "MaxBanderas",
     "pausa_tras_stops": "PausaTrasStops",
     "tolerancia_diario": "ToleranciaDiario",
+    "vetos": ("UsarReglasAprendidas",),
     "sesgo_fijo": (),
 }
 
@@ -92,6 +99,16 @@ class MismaMemoria(unittest.TestCase):
         for ajuste, nombres in PARAMETROS.items():
             for nombre in (nombres,) if isinstance(nombres, str) else nombres:
                 self.assertIn(nombre, entradas, f"falta el parámetro de MT5 para «{ajuste}»")
+
+    def test_las_reglas_aprendidas_miran_lo_mismo(self):
+        # Los atributos de una situación (los que pueden llevar las reglas aprendidas) y sus textos, en los dos bots.
+        fuente = _fuente()
+        cuerpo = re.search(r"string ValorAtributo\((.*?)\n  }", fuente, re.S)[1]
+        nombres = set(re.findall(r'atributo == "(\w+)"', cuerpo))
+        self.assertIn('g_veto_atr[k] == "bandera"', fuente)
+        self.assertEqual(nombres | {"bandera"}, set(motor.ATRIBUTOS))
+        velas = {motor.vela_4h_de(datetime(2026, 1, 5, h, m)) for h in range(24) for m in (0, 15, 30, 45)}
+        self.assertEqual(_textos_de_cualquiera("TextoVela4H"), velas)
 
     def test_el_archivo_lleva_bom_para_que_metaeditor_lea_los_acentos(self):
         with open(RUTA_EA, "rb") as f:

@@ -12,6 +12,9 @@ siguiente (no debería: cada una es independiente).
 from __future__ import annotations
 
 import math
+from datetime import datetime
+
+from .motor import vela_4h_de
 
 MINIMO_PARA_FIARSE = 30
 
@@ -117,14 +120,7 @@ def _psicologia(tomadas: list[dict]) -> list[str]:
 
 def _vela_4h(f: dict) -> str:
     """En qué vela de 4H fue la entrada («si ves que la vela de las nueve es la que se te da mejor…»)."""
-    hora = f["hora_ny"][11:16]
-    if hora <= "05:00":
-        return "vela de la 1 (Londres)"
-    if hora <= "09:00":
-        return "vela de las 5"
-    if hora <= "13:00":
-        return "vela de las 9 (Nueva York)"
-    return "más tarde"
+    return vela_4h_de(datetime.fromisoformat(f["hora_ny"]))
 
 
 def informe(filas: list[dict]) -> str:

@@ -10,7 +10,11 @@ Guía común para cualquier IA que trabaje en este repositorio. `CLAUDE.md` solo
   - cuando el dueño enseñe una situación (de un vídeo o de lo que le pase), añádela a `casos/casos.csv` con
     mercado, franja en hora de Nueva York y lo que tenía que hacer;
   - un caso suspendido o una idea nueva se prueban en el laboratorio (`aprender.py`) y la regla solo cambia si el
-    equipo la aprueba.
+    equipo la aprueba;
+  - la excepción es el **autoaprendizaje** (`autoaprender.py`, decidido por el dueño el 21-10-2026): el bot añade y
+    quita solo sus reglas aprendidas («no entrar si…»), que solo quitan entradas y tienen que pasar los frenos de
+    `crt/autoaprendizaje.py`. No relajes esos frenos sin que lo decida el dueño. Los atributos de una situación
+    (`motor.ATRIBUTOS`) y sus textos son los mismos en el Python y en MT5 (lo comprueba `tests/test_mt5.py`).
 - **La memoria del bot de MT5 (`mt5/`) tiene las mismas columnas, motivos, resultados y banderas rojas que
   `crt/memoria.py` y `crt/motor.py` (`DECISIONES`, `RESULTADOS` y `BANDERAS`):** si cambias uno, cambia el otro. Lo
   comprueba `tests/test_mt5.py`.

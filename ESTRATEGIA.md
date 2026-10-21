@@ -27,12 +27,19 @@ Si cambia una regla, se cambia aquí, en el código y en su prueba automática.
 | Fases de cuenta | Se mantiene: demo, cuenta propia y después fondeo, aunque el autor recomienda fondeo primero (vídeos de los 4.500 $, del mejor año y del plan de 0 a 100.000 $). |
 | Libra (GBP/USD) | Se añade como cuarto mercado, como la opera el autor (sus noticias fuertes son las de la libra y las del dólar). Para lo demás, se siguen los vídeos. |
 
+## Decidido por el dueño (21-10-2026)
+
+| Qué | Decisión |
+|---|---|
+| Autoaprendizaje | El bot aprende solo de todas sus situaciones, sobre todo de las peores, y se corrige solo (ver «Autoaprendizaje»). Con frenos: solo puede quitar entradas, una regla tiene que mejorar claramente en tres tramos de tiempo (el último no se usa para buscarla) y lo que deja de cumplirse se desaprende. Las demás reglas las sigue cambiando el equipo. |
+
 ## Pendiente de decidir
 
 - **Las fechas de los casos del examen** que no la tienen, y confirmar las deducidas (ver `casos/casos.csv`).
 - **El riesgo y el tope del día en las cuentas de futuros**, antes de llegar a esa fase (ver «Disciplina»).
 - **Cuándo se pasa de la demo a la cuenta propia** (el autor recomienda al menos 3 meses, unas 60 sesiones).
-- **Qué hacer con el resultado de la prueba con datos reales** (abajo): con las reglas de hoy, pierde.
+- **Qué hacer con el resultado de la prueba con datos reales** (abajo): con las reglas de hoy, pierde. El
+  autoaprendizaje no lo arreglará si la estrategia no tiene ventaja: solo puede quitar las peores situaciones.
 
 ## Prueba con datos reales (21-10-2026)
 
@@ -351,8 +358,46 @@ reglas candidatas.
   falta, se prueba una regla en el laboratorio. Los diez días del backtest del autor son de su modelo sin sesgo ni
   diario: se examinan con `python3 examen.py --modelo-del-backtest`.
 - **Cuaderno:** las operaciones del equipo, para la parte de psicología (ver «Disciplina»).
-- **Las reglas solo cambian cuando el equipo lo aprueba.** Se apunta aquí con la fecha y se cambian el código y su
+- **Autoaprendizaje** (ver abajo): las reglas aprendidas («no entrar si…») las añade y las quita el propio bot.
+- **Las demás reglas solo cambian cuando el equipo lo aprueba.** Se apunta aquí con la fecha y se cambian el código y su
   prueba automática.
+
+## Autoaprendizaje
+
+El bot aprende solo de todo lo que le pasa, sobre todo de lo peor (decidido por el dueño el 21-10-2026):
+
+1. **El bot de MT5 exporta sus precios cada día** (`barras_ny_<mercado>.csv`, en su carpeta `MQL5/Files/BotCRT`). Ahí
+   está todo lo vivido, también lo que ha hecho en directo.
+2. **Autoaprender** (doble clic en `Autoaprender.command` en el Mac, o `python3 autoaprender.py --carpeta …`) repasa todo
+   con el bot entero y busca sus **peores situaciones**: para cada cosa que describe una situación, cuánto pierden de
+   media las operaciones que la tenían. Son las mismas cosas que la memoria:
+   - dirección, sesión y vela de 4H de la entrada;
+   - día de la semana;
+   - sesgo semanal y mensual;
+   - diario y cómo se puso en verde;
+   - cómo se puso en verde el 4H;
+   - 3H, 1H y escenario;
+   - nota y cada bandera roja.
+3. **Cada una de las peores es una idea:** «no entrar en esa situación». La prueba con el bot entero.
+4. **Los frenos**, para no aprender la suerte (ya pasó con lo de las banderas):
+   - los precios se parten en tres tramos de tiempo iguales; las peores situaciones se buscan solo en los dos primeros
+     y el tercero se guarda para confirmar;
+   - una regla se aprende solo si mejora claramente (más que un «error típico») en los tres tramos y deja al menos
+     30 operaciones en cada uno; si se aprenden varias, también tienen que mejorar todas a la vez;
+   - solo quita entradas: nunca añade riesgo;
+   - cada vez se empieza de cero: lo que con los datos nuevos ya no se cumple se **desaprende**.
+5. **Lo aprendido va a `reglas_aprendidas.txt`**, con la fecha y las pruebas. El bot de MT5 lo lee cada día, deja de
+   entrar en esas situaciones (motivo «regla aprendida» en la memoria) y avisa al móvil de lo que ha aprendido y de lo
+   que ha desaprendido. Se puede apagar con UsarReglasAprendidas.
+
+Con pocos datos no aprende nada, y es lo correcto: hacen falta muchas operaciones para distinguir una situación mala de
+la mala suerte. Cuantos más meses de precios exporte el bot (MesesExportar), antes podrá aprender.
+
+**Primera vuelta (21-10-2026), con los precios de OANDA de 2005 a 2020:** no ha aprendido nada en ninguno de los cuatro
+mercados. Las situaciones que más pierden en los dos primeros tramos no mejoran claramente en el tercero, o dejan menos
+de 30 operaciones por tramo. Por ejemplo, en el EUR/USD «no entrar en Londres» mejoraba en los tres tramos, pero con
+15–23 operaciones por tramo. Es lo que se espera si la estrategia no tiene ventaja: quitar sus peores situaciones no la
+convierte en ganadora.
 
 ## Correcciones del código (20-10-2026)
 

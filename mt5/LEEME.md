@@ -9,7 +9,7 @@
 - **Os frena** (vídeo de psicología): con el tope de pérdida del día entre todos los mercados, deja de avisar y os
   dice que cerréis el gráfico.
 
-**Estado (21-10-2026, versión 1.15):** está escrito, pero no se ha podido compilar en la sesión de Claude. Puede que al
+**Estado (21-10-2026, versión 1.16):** está escrito, pero no se ha podido compilar en la sesión de Claude. Puede que al
 compilarlo salga algún error. Si pasa, copiad el texto del error y pasádselo a Claude (ver la sección 8).
 
 **Por defecto solo avisa.** Nunca opera en una cuenta real, salvo que lo activéis a propósito.
@@ -74,9 +74,16 @@ de fiarse de él. Por este orden:
   Parámetros de entrada). El lunes siguiente, volved a «El que calcula el bot» o ponedlo otra vez.
 - **Cada día:** los avisos llegan solos. **No toquéis las operaciones del bot**, ni el stop ni el TP, ni las cerréis a
   mano: lo que se está midiendo es el bot. Si operáis vosotros a mano, apuntadlo en el cuaderno (`cuaderno/`).
-- **Los viernes por la tarde:** pasadle a Claude las memorias (`MQL5/Files/BotCRT/memoria_*.csv`) y el cuaderno. Claude
-  os da el informe: qué gana, qué pierde, qué banderas importan, qué habría pasado con las descartadas y la psicología.
-- **Las reglas no se cambian a mitad:** solo con el laboratorio y vuestra aprobación.
+- **Los viernes por la tarde, el autoaprendizaje:** doble clic en `Autoaprender.command` (en la carpeta del bot). Repasa
+  los precios que el bot exporta cada día, busca sus peores situaciones y le deja las reglas aprendidas; el bot las
+  lee solo y os avisa al móvil de lo que ha aprendido y de lo que ha desaprendido. Lo explica `ESTRATEGIA.md`,
+  «Autoaprendizaje». La primera vez, el Mac puede pedir permiso para abrirlo (botón derecho → Abrir).
+- **Y pasadle a Claude** las memorias (`MQL5/Files/BotCRT/memoria_*.csv`), el informe del autoaprendizaje
+  (`informe_autoaprendizaje.txt`) y el cuaderno. Claude os da el informe: qué gana, qué pierde, qué banderas importan,
+  qué habría pasado con las descartadas y la psicología.
+- **Las demás reglas no se cambian a mitad:** solo con el laboratorio y vuestra aprobación.
+- **Para que pueda aprender de muchos meses:** en MT5, Herramientas → Opciones → Gráficos → «Máx. barras en el gráfico»,
+  poned «Ilimitado». Si no, MT5 solo da unos años de barras de 15 minutos.
 - **Cuánto tiempo:** el autor recomienda al menos 3 meses de demo (unas 60 sesiones). Cuándo se pasa a la cuenta
   propia lo decidís vosotros.
 
@@ -175,6 +182,10 @@ Un aviso es así:
 | ComprobarObjetivo4H | No entra si el TP queda más allá del objetivo del rango de 4H. | No |
 | VetarTomando | No entra con el diario o el 4H tomando máximos (en compras) o mínimos (en ventas). | No |
 | IgnorarSesgo / IgnorarDiario | Sin mirar el sesgo de fondo o el diario. Las dos juntas, con MaxOperacionesDia = 3, son el modelo del backtest del autor. Solo para pruebas. | No |
+| **Autoaprendizaje** | | |
+| UsarReglasAprendidas | Usa las reglas aprendidas (`reglas_aprendidas.txt`): no entra en las situaciones que ha aprendido que pierden. Solo quitan entradas. | Sí |
+| ExportarBarras | Al arrancar y una vez al día, guarda los precios de M15 en `barras_ny_<mercado>.csv` para que el bot aprenda. | Sí |
+| MesesExportar | Meses de precios que guarda. | 60 |
 | **Datos y memoria** | | |
 | DesfaseServidorNY | Horas que el reloj del servidor va por delante de Nueva York (ver abajo). | 7 |
 | DiferencialFijoPuntos | 0 = usa el diferencial real del bróker. Con un número, usa siempre ese (sirve para comparar con el Python). | 0 |
@@ -212,6 +223,7 @@ Hoy:     -1,0 R en este mercado · -2,0 R entre todos (tope: -3 R)
 Racha:   1 stop seguido
 Operación: ninguna
 Fantasmas siguiéndose: 2
+Reglas aprendidas: 1 · no entra si vela_4h es «vela de las 5»
 Última señal: 2026-10-20 10:30 · compra · entrada
 ```
 
@@ -229,6 +241,7 @@ Fantasmas siguiéndose: 2
 - **Operación:** la que tiene abierta. Si pone «de la historia, sin aviso», es una operación que habría tomado antes
   de arrancar: no se avisó, pero hasta que se cierre no toma otra, igual que la prueba en Python.
 - **Fantasmas:** señales descartadas que sigue para saber qué habría pasado.
+- **Reglas aprendidas:** las situaciones en las que ha aprendido a no entrar (las tres primeras).
 - **Última señal:** la última situación que ha visto y qué decidió.
 
 ## 6. La memoria

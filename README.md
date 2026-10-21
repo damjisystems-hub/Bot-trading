@@ -20,6 +20,8 @@ Bot de trading con la estrategia CRT («Candle Range Theory») para el NASDAQ, e
   azar. Ninguna idea de los vídeos lo arregla. Los detalles están en `ESTRATEGIA.md`, «Prueba con datos reales». No se
   usa con dinero real mientras pierda.
 - El bot de MT5 está escrito, pero no se ha podido compilar aquí: hay que compilarlo en MetaEditor (ver `mt5/LEEME.md`).
+- **Autoaprendizaje (21-10-2026):** el bot aprende solo de sus peores situaciones y se corrige, con frenos para no
+  aprender la suerte. En el Mac: doble clic en `Autoaprender.command` (ver `ESTRATEGIA.md`, «Autoaprendizaje»).
 - **Para empezar en demo:** `mt5/LEEME.md`, sección 0 (paso a paso y la rutina de cada semana).
 - No opera con dinero real.
 
@@ -53,6 +55,7 @@ python3 aprender.py datos/NAS100_M1.csv --mercado nasdaq --noticias datos/notici
 python3 examen.py datos/NAS100_M1.csv --mercado nasdaq
 python3 aprender.py datos/EURUSD_2012_2020.csv --mercado eurusd --confirmar datos/EURUSD_2005_2011.csv
 python3 diagnostico.py datos/EURUSD_M1.csv --mercado eurusd
+python3 autoaprender.py --carpeta "<carpeta de datos de MT5>/MQL5/Files/BotCRT"
 python3 cartera.py datos/EURUSD_M1.csv:eurusd datos/GBPUSD_M1.csv:gbpusd datos/NAS100_M1.csv:nasdaq datos/XAUUSD_M1.csv:oro
 python3 aprender.py --memoria-mt5 datos/memoria_NAS100.csv
 python3 cuaderno.py
@@ -70,6 +73,8 @@ python3 cuaderno.py
   «vbacktest-…».
 - `aprender.py --confirmar`: las ideas que mejoran claramente se prueban también en otros datos que no se han usado
   para buscarlas (por ejemplo, otros años). Lo que no se confirma puede ser casualidad.
+- `autoaprender.py`: el autoaprendizaje. Con `--carpeta`, lee los precios que exporta el bot de MT5 y le deja
+  `reglas_aprendidas.txt`, que el bot lee solo cada día. En el Mac, `Autoaprender.command` hace lo mismo con doble clic.
 - `diagnostico.py`: mira si un rango CRT, por sí solo (sin sesgo, diario ni order block), llega al objetivo más veces
   de lo que daría el azar.
 - `cartera.py`: los mercados a la vez, como el bot de MT5 puesto en todos los gráficos. El tope de pérdida del día suma
@@ -114,6 +119,7 @@ python3 -m unittest
 | `ESTRATEGIA.md` | Las reglas exactas, lo decidido, lo provisional y cómo aprende. |
 | `probar.py`, `aprender.py`, `examen.py`, `cartera.py`, `diagnostico.py`, `cuaderno.py` | Las órdenes. |
 | `crt/diagnostico.py` | Si un rango CRT solo tiene ventaja frente al azar. |
+| `crt/autoaprendizaje.py`, `autoaprender.py`, `Autoaprender.command` | El autoaprendizaje: las peores situaciones, los frenos y el archivo de reglas aprendidas. |
 | `casos/casos.csv` | Las situaciones del examen: las de los vídeos y las que le enseñéis. |
 | `cuaderno/` | Vuestro cuaderno de operaciones (`operaciones.csv`) y cómo rellenarlo. |
 | `crt/velas.py` | Lee el CSV (MT5 o UTC) y monta las velas de 1H, 3H, 4H, diario, semanal y mensual en hora de Nueva York. |
