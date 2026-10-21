@@ -1636,6 +1636,8 @@ bool EsCuentaDemo(void)
 
 bool PuedeOperar(void)
   {
+   if(MQLInfoInteger(MQL_TESTER) != 0)
+      return true;   // en el probador de estrategias el dinero es de mentira: opera siempre, para que el informe sirva
    if(Modo != OPERAR_EN_DEMO)
       return false;
    if(EsCuentaDemo())

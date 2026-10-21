@@ -35,9 +35,7 @@ de fiarse de él. Por este orden:
    - la primera prueba con datos reales del pasado (todavía no hay ninguna);
    - el examen con las situaciones de los vídeos;
    - la comparación con lo que decide el bot de MT5 (sección 9), para asegurar que los dos deciden igual.
-5. **Verlo funcionar con el pasado (opcional).** En MT5: Ver → Probador de estrategias. Elegid BotCRT, el símbolo, M15,
-   unas semanas de fechas y «Visualización». Se ve cómo marca entradas, stops y TP sobre el gráfico. En el probador no
-   hay noticias ni avisos al móvil.
+5. **Probarlo con el pasado** (sección 10): en el probador de estrategias de MT5, con los precios de vuestro bróker.
 6. **Ponerlo en los cuatro gráficos** (sección 2). Cambiad solo esto; lo demás, como viene:
 
    | Parámetro | NASDAQ | EUR/USD | GBP/USD | Oro |
@@ -338,3 +336,45 @@ Copiad el texto exacto del error (con su número de línea) y pasádselo a Claud
 3. Pasadle a Claude `historia_<mercado>.csv` (lo que habría hecho en la historia; va aparte para no mezclarse con la
    memoria de lo que hace en directo, que nunca se borra) y las barras. Las dos memorias tienen que tener las mismas
    entradas, salvo en los primeros días, mientras el bot «se pone al día».
+
+## 10. Probarlo con el pasado (backtest)
+
+Lo que ya se sabe: con precios de OANDA de 2005 a 2020, el bot pierde (unas −97 R en 817 operaciones; ver
+`ESTRATEGIA.md`). Falta probar los años recientes, de 2021 a hoy, con los precios de vuestro bróker. Hay dos formas, y
+lo mejor es hacer las dos.
+
+**A. En el probador de estrategias de MT5 (lo veis vosotros)**
+
+1. En MT5: **Ver → Probador de estrategias**.
+2. En la pestaña «Ajustes»:
+   - Asesor experto: **BotCRT**;
+   - Símbolo: uno de los cuatro (por ejemplo, EURUSD), y periodo **M15**;
+   - Fecha: «Periodo personalizado», del **01.01.2021** a hoy;
+   - Modelado: **«Cada tick basado en ticks reales»**, que usa el diferencial de verdad del bróker. Si va muy lento,
+     «OHLC en M1»;
+   - Depósito: lo que pensáis poner en la cuenta propia;
+   - Optimización: desactivada. «Visualización», sin marcar: con ella se ve el gráfico, pero va muy despacio.
+3. En la pestaña «Parámetros de entrada»: NombreMercado y ColchonStopPuntos como en la tabla de la sección 0, y
+   DesfaseServidorNY el de vuestro bróker. Lo demás, como viene. En el probador el bot opera siempre, aunque Modo diga
+   «Solo avisos»: el dinero es de mentira.
+4. Pulsad **Iniciar** y esperad a que la barra de abajo llegue al final.
+5. Pestaña **«Backtest»** (el informe): beneficio neto, factor de beneficio (más de 1 = gana; menos de 1 = pierde),
+   reducción máxima, número de operaciones y porcentaje de ganadoras. Pestaña **«Gráfico»**: la curva del balance.
+6. Repetidlo con los cuatro mercados y pasadle a Claude una captura del informe de cada uno.
+
+En el probador no hay calendario de noticias ni tope de pérdida entre mercados: cada mercado se prueba solo. Si MT5 no
+tiene precios de antes de la fecha de inicio, los primeros meses entra menos, porque le falta el sesgo de fondo.
+
+**B. Con Claude (la prueba completa)**
+
+Con el bot puesto en los gráficos de la cuenta demo, cada día guarda 5 años de precios de cada mercado en
+`MQL5/Files/BotCRT/barras_ny_<mercado>.csv` (en el Mac, la carpeta está en
+`~/Library/Application Support/net.metaquotes.wine.metatrader5/drive_c/Program Files/MetaTrader 5/MQL5/Files/BotCRT`).
+Comprimid los cuatro archivos en un zip y pasádselos a Claude. Con ellos hace:
+
+- la prueba del Python con vuestros precios y la confirmación con años que no se han usado para buscar ideas;
+- el examen con las situaciones de los vídeos (las que tienen fecha son de 2025 y 2026);
+- la comparación con el probador de MT5, para asegurar que los dos bots deciden igual.
+
+Las cifras de cualquier prueba con el pasado dependen de los precios y de los costes supuestos: no garantizan lo que
+pasará.
