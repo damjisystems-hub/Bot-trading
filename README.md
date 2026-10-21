@@ -15,11 +15,13 @@ Bot de trading con la estrategia CRT («Candle Range Theory») para el NASDAQ, e
 - Las reglas, la memoria, el laboratorio, el examen y el cuaderno están programados y comprobados con pruebas
   automáticas. Ya tienen lo de los veintitrés vídeos: 13 banderas rojas, 38 reglas candidatas, 60 situaciones en el
   examen y la disciplina de los vídeos de psicología y de cuentas.
-- **Prueba con datos reales del pasado (21-10-2026):** de 2005 a mayo de 2020, con precios de 1 minuto de OANDA (ver
-  «Datos»). Con las reglas de hoy **pierde** (817 operaciones, unos −97 R), y un rango de 4H solo se comporta como el
-  azar. Ninguna idea de los vídeos lo arregla. Los detalles están en `ESTRATEGIA.md`, «Prueba con datos reales». No se
-  usa con dinero real mientras pierda.
-- El bot de MT5 está escrito, pero no se ha podido compilar aquí: hay que compilarlo en MetaEditor (ver `mt5/LEEME.md`).
+- **Prueba con datos reales del pasado (21 y 22-10-2026):** de 2005 a mayo de 2020 con precios de OANDA, y de 2021 a
+  2025 con los de la demo de MetaQuotes (ver «Datos»). Con las reglas de hoy **pierde** en los tres tramos (unas 1.065
+  operaciones y unos −106 R), y un rango de 4H solo se comporta como el azar. Ninguna idea de los vídeos lo arregla y el
+  examen con los vídeos sale 8 de 32. Los detalles están en `ESTRATEGIA.md`, «Prueba con datos reales». No se usa con
+  dinero real mientras pierda.
+- El bot de MT5 compila y funciona en la demo de MetaQuotes desde el 22-10-2026, con avisos por Telegram (ver
+  `mt5/LEEME.md`).
 - **Autoaprendizaje (21-10-2026):** el bot aprende solo de sus peores situaciones y se corrige, con frenos para no
   aprender la suerte. En el Mac: doble clic en `Autoaprender.command` (ver `ESTRATEGIA.md`, «Autoaprendizaje»).
 - **Para empezar en demo:** `mt5/LEEME.md`, sección 0 (paso a paso y la rutina de cada semana).
@@ -101,7 +103,10 @@ Hacen falta barras de 1 o de 15 minutos de varios años de cada mercado:
    repositorio público de GitHub `FutureSharks/financial-data` (`pyfinancialdata/data/currencies/oanda/`: EUR_USD,
    GBP_USD, NAS100_USD y XAU_USD). Se juntan en barras de 15 minutos y se leen con `--formato utc`. Son precios de OANDA,
    no los de vuestro bróker, y terminan en 2020: no sirven para los casos del examen, que son de 2025 y 2026.
-4. **Noticias:** el bot de MT5 las exporta desde su calendario económico con el parámetro `ExportarNoticias`
+4. **Demo de MetaQuotes, de septiembre de 2021 a hoy (la prueba de los años recientes y el examen):** los
+   `barras_ny_*.csv` que exporta el bot de MT5 cada día (en `datos/metaquotes_demo/`). Ya van en hora de Nueva York: se
+   leen con `--formato mt5 --desfase-servidor 0`.
+5. **Noticias:** el bot de MT5 las exporta desde su calendario económico con el parámetro `ExportarNoticias`
    (`noticias.csv`).
 
 Los datos y los resultados no se suben a git (`datos/` y `resultados/` están en `.gitignore`).

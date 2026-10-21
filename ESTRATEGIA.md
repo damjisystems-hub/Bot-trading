@@ -96,14 +96,45 @@ En total, de 2005 a 2020: **817 operaciones y unos −97 R** con las reglas de h
 estrategia, tal como está escrita en este documento, no gana en ninguno de los dos tramos. Para repetirlo con otros
 datos: `python3 aprender.py <datos> --mercado <m> --confirmar <otros datos>`.
 
+### Años recientes: 2021–2026, con los precios de la demo (22-10-2026)
+
+Barras de 15 minutos de la cuenta demo de MetaQuotes, exportadas por el bot de MT5 (`barras_ny_*.csv`, ya en hora de
+Nueva York: comprobado con la apertura de cada semana). Van del 19-09-2021 (el NASDAQ, del 06-07-2022) al 21-10-2026.
+Los costes son los supuestos de `crt/mercados.py`.
+
+| Hasta el 31-12-2025 | Operaciones | Acierto | Resultado | Media por operación |
+|---|---|---|---|---|
+| EUR/USD | 69 | 26 % | −14,6 R | −0,21 R |
+| GBP/USD | 84 | 40 % | +10,5 R | +0,12 R |
+| Oro | 54 | 33 % | −4,1 R | −0,08 R |
+| NASDAQ | 41 | 34 % | −0,4 R | −0,01 R |
+| **Los cuatro juntos** (`cartera.py`) | **248** | **34 %** | **−8,6 R** | **−0,03 R** |
+
+- **Pierde poco, pero pierde.** La peor caída de los cuatro juntos fue de −27 R. En 2026 (enero a octubre) va peor:
+  53 operaciones, 25 % de acierto y −12,8 R.
+- **Sin costes daría +8,4 R** (+0,03 R por operación), que es casi cero: el diferencial, unos 0,06 R por operación, lo
+  deja en pérdidas.
+- **La libra gana, pero dentro de lo que da la suerte** (±13 R en 84 operaciones), y en 2012–2020 perdió −8,9 R.
+- **Los rangos de 4H en bruto** llegan a su objetivo del 43 al 46 % de las veces, un poco menos que al azar (46–48 %),
+  igual que en 2005–2020.
+- **Lo que parece ir bien cambia de signo de un periodo a otro:** las entradas de la vela de la 1 ganan +20 R ahora y
+  perdieron −44 R y −31 R antes; las de nota C ganan +12 R ahora y perdieron −30 R y −55 R antes. Es suerte, no una regla.
+- **Laboratorio** (36 ideas, en dos periodos): ninguna mejora clara en ningún mercado, así que no hay nada que confirmar
+  con 2012–2020. **El autoaprendizaje** no aprende nada.
+- **Examen con los vídeos (el primero con precios de esas fechas):** de 32 situaciones con fecha, el bot hace lo mismo
+  que el autor en 8. De las 24 que no: en 12 el bot no vio un order block con el 4H a favor, en 9 no tenía sesgo a favor
+  (el semanal y el mensual en contra) y en 3 el diario no estaba a favor. Algunas fechas y pares están deducidos.
+
+**De 2005 a 2025, unas 1.065 operaciones y unos −106 R.** No gana en ningún tramo.
+
 **Lo que se puede hacer (lo decide el equipo):**
 
-1. Probar con vuestro bróker de 2020 a hoy (exportando de MT5), que son años más recientes, los de los vídeos. Con esos
-   datos se puede hacer además el examen con las situaciones de los vídeos.
+1. ~~Probar con años recientes~~: hecho (arriba): también pierde.
 2. Seguir en demo solo para medir, sin esperar que gane, y revisar las reglas con lo que salga. Con dinero real no tiene
    sentido mientras pierda en el pasado.
 3. Revisar con el autor o con vuestra experiencia en qué se diferencia el bot de lo que hace él a ojo (ver «Lo que el
-   bot no copia»): si la estrategia gana, la ventaja tiene que estar justo ahí, porque el patrón solo no la tiene.
+   bot no copia»): si la estrategia gana, la ventaja tiene que estar justo ahí, porque el patrón solo no la tiene. El
+   examen dice por dónde empezar: el order block con el 4H a favor y el sesgo.
 
 ## Horario
 
