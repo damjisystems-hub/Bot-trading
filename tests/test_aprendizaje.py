@@ -94,6 +94,17 @@ class Laboratorio(unittest.TestCase):
         self.assertEqual(laboratorio.veredicto(base, ({"n": 80, "media": 0.0}, {"n": 40, "media": 0.0})), "no mejora")
         self.assertEqual(laboratorio.veredicto(base, ({"n": 10, "media": 1.0}, {"n": 40, "media": 1.0})), "pocas operaciones para saberlo")
 
+    def test_confirmar_prueba_las_reglas_de_hoy_y_solo_las_ideas_claras(self):
+        nombre, otra = laboratorio.CANDIDATAS[0][0], laboratorio.CANDIDATAS[1][0]
+        pruebas = [
+            laboratorio.Prueba(nombre, None, ({}, {}), "MEJORA clara en los dos periodos: proponer al equipo"),
+            laboratorio.Prueba(otra, None, ({}, {}), "mejora en los dos periodos, pero poco: puede ser suerte"),
+        ]
+        filas = laboratorio.confirmar(camino(HISTORIA + SUBE_AL_TP), SIN_COSTES, pruebas, SOLO_4H)
+        self.assertEqual([f[0] for f in filas], ["Las reglas de hoy", nombre])
+        self.assertIn("no se confirma", laboratorio.texto_confirmacion(filas))  # con una operación no se puede confirmar
+        self.assertIn("no hay nada que confirmar", laboratorio.texto_confirmacion(filas[:1]))
+
     def test_una_mejora_pequena_con_mucho_baile_puede_ser_suerte(self):
         # Con un stop o un TP a 1 a 2 cada operación da -1 o +2: la media baila mucho con pocas operaciones.
         base = ({"n": 60, "media": 0.0, "varianza": 2.25}, {"n": 30, "media": 0.0, "varianza": 2.25})

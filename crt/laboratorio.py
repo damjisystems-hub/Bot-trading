@@ -128,6 +128,32 @@ def comprobar(barras, mercado, ajustes: Ajustes | None = None, noticias: dict | 
     return corte, base, pruebas
 
 
+def confirmar(barras, mercado, pruebas: list[Prueba], ajustes: Ajustes | None = None, noticias: dict | None = None) -> list[tuple[str, dict]]:
+    """Las reglas de hoy y las ideas con «MEJORA clara», en otros datos que no se han usado para buscarlas (por
+    ejemplo, otros años). Una idea que solo mejora en los datos donde se buscó puede ser casualidad."""
+    ajustes = ajustes or Ajustes()
+    cambios = dict(CANDIDATAS)
+    lista = [("Las reglas de hoy", {})] + [(p.nombre, cambios[p.nombre]) for p in pruebas if p.veredicto.startswith("MEJORA clara")]
+    return [(nombre, _stats(probar(barras, mercado, replace(ajustes, **c), noticias).operaciones)) for nombre, c in lista]
+
+
+def texto_confirmacion(filas: list[tuple[str, dict]]) -> str:
+    base = filas[0][1]
+    lineas = ["Confirmación con otros datos (no se han usado para buscar las ideas):"]
+    for nombre, s in filas:
+        veredicto = ""
+        if nombre != "Las reglas de hoy":
+            clara = s["media"] - base["media"] > (error_tipico(s) ** 2 + error_tipico(base) ** 2) ** 0.5
+            veredicto = " · SE CONFIRMA" if clara and s["n"] >= MINIMO_OPERACIONES else " · no se confirma"
+        lineas.append(
+            f"- {nombre}: {s['n']} op. · acierto {100 * s['acierto']:.0f} % · media {_r(s['media'])} "
+            f"(± {_r(error_tipico(s))[1:]}) · total {_r(s['total'])}{veredicto}"
+        )
+    if len(filas) == 1:
+        lineas.append("  Ninguna idea mejoró claramente en los datos de búsqueda: no hay nada que confirmar.")
+    return "\n".join(lineas)
+
+
 def _r(x: float) -> str:
     return f"{x:+.2f} R".replace(".", ",")
 

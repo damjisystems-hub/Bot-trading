@@ -5,6 +5,10 @@ Uso:
   python3 aprender.py datos/NAS100_M1.csv --mercado nasdaq
   python3 aprender.py datos/NAS100_M1.csv --mercado nasdaq --noticias datos/noticias.csv --corte 2025-06-01
   python3 aprender.py --memoria-mt5 datos/memoria_NAS100.csv      (solo lo que apuntó el bot de MT5)
+  python3 aprender.py datos/EURUSD_2012_2020.csv --mercado eurusd --confirmar datos/EURUSD_2005_2011.csv
+
+Con --confirmar, las reglas de hoy y las ideas que mejoran claramente se prueban también en otros datos (por
+ejemplo, otros años) que no se han usado para buscarlas: una idea que no se confirma puede ser casualidad.
 
 Guarda la memoria en resultados/memoria_<mercado>.csv. Nada de esto cambia las reglas: propone.
 """
@@ -31,6 +35,7 @@ def main() -> int:
     p.add_argument("--noticias", help="CSV de noticias (fecha, hora, moneda, evento, importancia)")
     p.add_argument("--corte", help="fecha que separa los dos periodos del laboratorio (AAAA-MM-DD)")
     p.add_argument("--memoria-mt5", help="memoria escrita por el bot de MT5: solo se hace el informe")
+    p.add_argument("--confirmar", help="otros datos del mismo mercado (por ejemplo, otros años) para confirmar las ideas")
     args = p.parse_args()
 
     if args.memoria_mt5:
@@ -52,6 +57,9 @@ def main() -> int:
     print(texto_prueba(base.resultado))
     print("\n" + aprendizaje.informe(filas))
     print("\n" + laboratorio.texto(corte, base, pruebas, hay_noticias=bool(noticias)))
+    if args.confirmar:
+        otros = leer_csv(args.confirmar, args.formato, args.desfase_servidor)
+        print("\n" + laboratorio.texto_confirmacion(laboratorio.confirmar(otros, mercado, pruebas, noticias=noticias)))
     print(f"\nMemoria guardada en {ruta}")
     return 0
 

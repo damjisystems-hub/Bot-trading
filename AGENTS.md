@@ -26,3 +26,5 @@ Guía común para cualquier IA que trabaje en este repositorio. `CLAUDE.md` solo
   - Python 3.9 o más nuevo, sin librerías externas (tiene que funcionar en el Mac del dueño sin instalar nada);
   - pruebas: `python3 -m unittest`.
 - **Datos fuera de git:** los precios van en `datos/` y los resultados en `resultados/`.
+- **Las ideas se buscan con unos datos y se confirman con otros** (`aprender.py --confirmar`, por ejemplo con otros
+  años). No presentes como mejora lo que solo mejora donde se buscó: con muchas ideas, alguna sale bien por suerte.

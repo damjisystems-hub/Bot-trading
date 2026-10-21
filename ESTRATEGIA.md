@@ -54,22 +54,49 @@ bróker, y no llegan a 2025: el examen con las situaciones de los vídeos no se 
   operación.
 - **El laboratorio no encuentra arreglo:** ninguna de las 35 ideas probadas mejora claramente en los dos periodos (antes
   y después de julio de 2017). Las que mejoran un poco lo hacen en un solo mercado, que es lo que se espera de la suerte.
-- **Las banderas rojas sí avisan:** las operaciones con dos o más (nota C) son tres de cada cuatro y suman −55 R en 329
-  operaciones; las de nota A o B, −2 R en 120. Con «como mucho una bandera roja» se queda en tablas, pero no gana, y
-  quedan pocas operaciones para saber si es de verdad o suerte. Esta idea sale de mirar estos mismos datos: hay que
-  confirmarla con otros.
+- **Las banderas rojas parecían avisar:** en 2012–2020 las operaciones con dos o más (nota C) sumaban −55 R en 329, y
+  las de nota A o B, −2 R en 120. Pero en los datos de confirmación (abajo) «como mucho una bandera roja» pierde lo
+  mismo que sin el filtro: era casualidad.
 - **El NASDAQ pierde sobre todo en Londres** (89 de sus 99 operaciones, −24 R). El autor lo opera en la apertura, pero
   en esa franja salen muy pocas operaciones (10) para saber nada.
 - El euro y la libra coincidieron abiertos hacia el mismo lado solo 7 veces.
 
+### Por qué pierde: el diagnóstico
+
+- **Un rango de 4H solo no tiene ventaja** (`diagnostico.py`): entrando al cierre de la vela 2, con el stop en el
+  barrido y el TP en el objetivo, llega al objetivo entre el 42 % y el 49 % de las veces según el mercado, lo mismo o un
+  poco menos que si el precio se moviera al azar, y la media sale entre −0,04 y −0,11 R. Los rangos diarios, igual.
+  Cuanto más lejos está el objetivo, menos veces se llega, en la proporción justa del azar.
+- **Ningún TP fijo arregla las operaciones del bot:** con lo que llegó a ir a favor cada una, con un TP a 0,5, 1, 1,5 o
+  2 R la media sigue en 0 o por debajo en los cuatro mercados.
+- **Los stops más pegados del autor tampoco:** se probaron aparte el stop en el order block de M15 y en el barrido de
+  1H, con el TP a 1 a 2 o en el objetivo del 4H. La mejor versión (stop en el barrido de 1H y TP en el objetivo del 4H)
+  perdía −13 R en 246 operaciones en 2012–2020 y −46,5 R en 207 en 2005–2011. No se ha añadido al bot.
+- **No es por la forma de contar:** ninguna operación tocó el stop y el TP en la misma barra de 15 minutos, así que contar
+  el stop en ese caso no perjudica.
+
+### Confirmación con otros años (2005–2011)
+
+Los datos de 2005 a 2011 (del oro, desde 2006) se guardaron sin mirar para confirmar al final. Con ellos:
+
+| 2005–2011 | Operaciones | Acierto | Resultado | Media por operación |
+|---|---|---|---|---|
+| Las reglas de hoy | 368 | 31 % | −40,1 R | −0,11 R |
+| Como mucho una bandera roja | 106 | 32 % | −11,8 R | −0,11 R |
+| Stop en el barrido de 1H y TP en el objetivo del 4H | 207 | 29 % | −46,5 R | −0,22 R |
+
+En total, de 2005 a 2020: **817 operaciones y unos −97 R** con las reglas de hoy. Con los datos que hay, la
+estrategia, tal como está escrita en este documento, no gana en ninguno de los dos tramos. Para repetirlo con otros
+datos: `python3 aprender.py <datos> --mercado <m> --confirmar <otros datos>`.
+
 **Lo que se puede hacer (lo decide el equipo):**
 
-1. Probar con vuestro bróker de 2020 a hoy (exportando de MT5), que son otros datos y años más recientes. Si con
-   «como mucho una bandera roja» u otra idea se confirma una mejora clara, se propone.
+1. Probar con vuestro bróker de 2020 a hoy (exportando de MT5), que son años más recientes, los de los vídeos. Con esos
+   datos se puede hacer además el examen con las situaciones de los vídeos.
 2. Seguir en demo solo para medir, sin esperar que gane, y revisar las reglas con lo que salga. Con dinero real no tiene
    sentido mientras pierda en el pasado.
 3. Revisar con el autor o con vuestra experiencia en qué se diferencia el bot de lo que hace él a ojo (ver «Lo que el
-   bot no copia»): puede que la ventaja esté justo ahí.
+   bot no copia»): si la estrategia gana, la ventaja tiene que estar justo ahí, porque el patrón solo no la tiene.
 
 ## Horario
 
@@ -311,8 +338,8 @@ reglas candidatas.
     estrategia para 2026);
   - el modelo del backtest del autor, para comparar: sin sesgo ni diario y hasta 3 operaciones al día (su «+80 %» son
     11 TP de 13 operaciones en una semana de mayo de 2025, elegida después de verla);
-  - como mucho una bandera roja (nota A o B), que sale de la prueba con datos reales del 21-10-2026 y hay que
-    confirmar con otros datos.
+  - como mucho una bandera roja (nota A o B), que salió de la prueba con datos reales del 21-10-2026 y no se confirmó
+    con los años 2005–2011.
 
   Una candidata solo se propone si mejora la media de R por operación en los dos periodos, con al menos 30
   operaciones en cada uno y por más de un «error típico» (lo que baila la media por pura suerte con esas operaciones).
