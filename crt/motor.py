@@ -170,6 +170,8 @@ class Ajustes:
     max_banderas: int | None = None  # como mucho tantas banderas rojas (1: nota A o B)
     pausa_tras_stops: int | None = None  # tras tantos stops seguidos, el resto del día y el siguiente sin operar
     tolerancia_diario: float = 0.0  # un rango diario que cierra hasta esta parte de la vela 1 por fuera sigue contando
+    anticipo_sin_1h: bool = False  # el 4H anticipado no espera a un rango de 1H cerrado: barrido, vuelta dentro y order block
+    sin_veto_mensual: bool = False  # sesgo: manda el semanal aunque el mensual vaya en contra
     vetos: tuple = ()  # reglas aprendidas: situaciones en las que no se entra, como ("vela_4h", "vela de las 5")
     sesgo_fijo: int | None = None  # solo para pruebas: +1 compras, -1 ventas
 
@@ -262,12 +264,13 @@ def direccion_de(evento) -> int:
     return evento.direccion if evento.estado == "activo" else 0
 
 
-def sesgo_de_fondo(semanal: Marco, mensual: Marco) -> int:
-    """Manda el semanal; si no dice nada, el mensual. Si se contradicen, no hay sesgo y no se opera."""
+def sesgo_de_fondo(semanal: Marco, mensual: Marco, veto_mensual: bool = True) -> int:
+    """Manda el semanal; si no dice nada, el mensual. Si se contradicen, no hay sesgo y no se opera (sin el veto del
+    mensual, regla candidata, manda el semanal aunque el mensual vaya en contra)."""
     s, m = direccion_de(semanal.ultimo), direccion_de(mensual.ultimo)
     if s == 0:
         return m
-    return 0 if m == -s else s
+    return 0 if veto_mensual and m == -s else s
 
 
 def probar(barras: list[Vela], mercado: Mercado, ajustes: Ajustes | None = None, noticias: dict | None = None) -> Resultado:
@@ -301,7 +304,7 @@ class _Recorrido:
         self.mercado, self.ajustes, self.noticias = mercado, ajustes, noticias
         self.h1 = Marco("H1")
         self.h3 = Marco("H3")
-        self.h4 = Marco("H4", menor=self.h1, inicio_4h=ajustes.inicio_4h)
+        self.h4 = Marco("H4", menor=self.h1, inicio_4h=ajustes.inicio_4h, exige_menor=not ajustes.anticipo_sin_1h)
         self.d1 = Marco("D1", menor=self.h4, tolerancia=ajustes.tolerancia_diario)
         self.w1 = Marco("W1")
         self.mn = Marco("MN")
@@ -373,7 +376,8 @@ class _Recorrido:
     # ───────────────────────── Decisión ─────────────────────────
 
     def _sesgo(self) -> int:
-        return self.ajustes.sesgo_fijo if self.ajustes.sesgo_fijo is not None else sesgo_de_fondo(self.w1, self.mn)
+        a = self.ajustes
+        return a.sesgo_fijo if a.sesgo_fijo is not None else sesgo_de_fondo(self.w1, self.mn, not a.sin_veto_mensual)
 
     def _mirar(self, barra: Vela, anterior: Vela, d: int) -> None:
         a = self.ajustes

@@ -60,6 +60,11 @@ class EntradaTrasElCierreDe4H(unittest.TestCase):
         ]
         res = probar(camino(puntos), SIN_COSTES, SOLO_4H)
         self.assertEqual(res.operaciones, [])
+        # Con la regla candidata del autor («nos toma el bajo, empieza a reaccionar, creamos el order block»), basta
+        # con el barrido de 4H, la vuelta dentro y el order block: entra a las 8:30, antes de que cierre la vela de 4H.
+        sin_1h = probar(camino(puntos + [("2025-03-04 11:00", 125)]), SIN_COSTES, replace(SOLO_4H, anticipo_sin_1h=True))
+        self.assertEqual([(o.hora_entrada, o.via, o.resultado) for o in sin_1h.operaciones], [(ny("2025-03-04 08:30"), "anticipo", "TP")])
+        self.assertAlmostEqual(sin_1h.operaciones[0].stop, 99)  # detrás del barrido de la vela de 4H en curso
 
     def test_ventas_al_reves(self):
         puntos = espejo(HASTA_LAS_9 + ORDER_BLOCK_9_30 + [("2025-03-04 11:00", 125), ("2025-03-04 13:00", 125)])
@@ -487,6 +492,12 @@ class SesgoDeFondo(unittest.TestCase):
         self.assertEqual(sesgo_de_fondo(self._marco(ruptura_alcista), self._marco(rango_bajista)), 0)  # se contradicen
         rango_bajista.estado = "completado"
         self.assertEqual(sesgo_de_fondo(self._marco(None), self._marco(rango_bajista)), 0)
+
+    def test_sin_el_veto_del_mensual_manda_el_semanal(self):
+        ruptura_alcista = Evento("W1", "ruptura", +1, 0, 0)
+        rango_bajista = Evento("MN", "rango", -1, 0, 0, objetivo=1, barrido=2)
+        self.assertEqual(sesgo_de_fondo(self._marco(ruptura_alcista), self._marco(rango_bajista), veto_mensual=False), +1)
+        self.assertEqual(sesgo_de_fondo(self._marco(None), self._marco(rango_bajista), veto_mensual=False), -1)
 
 
 class Cartera(unittest.TestCase):

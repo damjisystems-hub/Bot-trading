@@ -62,6 +62,10 @@ CANDIDATAS = (
     # De la primera prueba con datos reales (21-10-2026): las de nota C perdían mucho más. Como sale de mirar esos
     # mismos datos, hay que confirmarla con otros (los del bróker, de 2020 en adelante).
     ("Como mucho una bandera roja (nota A o B)", {"max_banderas": 1}),
+    # De copiar al autor caso a caso (22-10-2026, ver ESTRATEGIA.md): lo que más le acerca a lo que hace él.
+    ("4H anticipado sin esperar al 1H (barrido, vuelta dentro y order block)", {"anticipo_sin_1h": True}),
+    ("Sesgo: manda el semanal aunque el mensual vaya en contra", {"sin_veto_mensual": True}),
+    ("Las dos del autor juntas (4H sin esperar al 1H y sin el veto del mensual)", {"anticipo_sin_1h": True, "sin_veto_mensual": True}),
 )
 NECESITAN_NOTICIAS = ("sin_noticias", "antes_de_noticias")
 

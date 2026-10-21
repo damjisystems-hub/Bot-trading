@@ -63,6 +63,8 @@ PARAMETROS = {
     "max_banderas": "MaxBanderas",
     "pausa_tras_stops": "PausaTrasStops",
     "tolerancia_diario": "ToleranciaDiario",
+    "anticipo_sin_1h": "Anticipo4HSinEsperar1H",
+    "sin_veto_mensual": "SesgoSinVetoMensual",
     "vetos": ("UsarReglasAprendidas",),
     "sesgo_fijo": (),
 }

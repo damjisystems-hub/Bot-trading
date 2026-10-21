@@ -31,7 +31,7 @@
 //
 // Si cambias una regla aquí, cámbiala también en crt/ (y al revés): los dos tienen que decidir igual.
 #property copyright   "Damji Systems"
-#property version     "1.17"
+#property version     "1.18"
 #property description "Bot CRT: avisa de las entradas de la estrategia CRT y apunta la memoria."
 #property description "Por defecto solo avisa. No opera en cuentas reales."
 
@@ -113,6 +113,8 @@ input bool     BreakEvenAntesDeLas9     = false;        // Ganando, stop a la en
 input bool     ComprobarObjetivo4H      = false;        // No entrar si el TP queda más allá del objetivo del 4H
 input bool     VetarTomando             = false;        // No entrar con el diario o el 4H tomando máximos (compras) o mínimos (ventas)
 input bool     IgnorarSesgo             = false;        // Sin sesgo de fondo (con IgnorarDiario: el modelo del backtest del autor)
+input bool     Anticipo4HSinEsperar1H   = false;        // 4H anticipado sin esperar a un rango de 1H cerrado (barrido, vuelta dentro y order block)
+input bool     SesgoSinVetoMensual      = false;        // Sesgo: manda el semanal aunque el mensual vaya en contra
 input bool     IgnorarDiario            = false;        // Sin mirar el diario (solo para pruebas)
 
 input group "Autoaprendizaje"
@@ -404,8 +406,9 @@ public:
    int               i_barrido_baj;  // ... y el máximo
    int               inicio_4h;      // hora de Nueva York a la que empiezan las velas de 4H
    double            tolerancia;     // cierre un poco por fuera que aún cuenta como rango (ver Evaluar)
+   bool              exige_menor;    // para anticipar, ¿hace falta un rango del marco menor después del barrido?
 
-   void              Iniciar(const string n, const int t, CMarco *m, const int h4 = 17, const double tol = 0);
+   void              Iniciar(const string n, const int t, CMarco *m, const int h4 = 17, const double tol = 0, const bool exige = true);
    void              ClaveYFin(const datetime inicio_ny, datetime &k, datetime &fin);
    bool              TocaCerrarAntes(const Vela &b);
    bool              TocaCerrarDespues(const Vela &b);
@@ -431,13 +434,14 @@ private:
    int               EscenarioDesdeUltimo(const int dir);
   };
 
-void CMarco::Iniciar(const string n, const int t, CMarco *m, const int h4, const double tol)
+void CMarco::Iniciar(const string n, const int t, CMarco *m, const int h4, const double tol, const bool exige)
   {
    nombre = n;
    tipo = t;
    menor = m;
    inicio_4h = h4;
    tolerancia = tol;
+   exige_menor = exige;
    ArrayResize(cerradas, 0);
    ArrayResize(ev, 0);
    ZeroMemory(parcial);
@@ -703,32 +707,39 @@ bool CMarco::DameSetup(const int dir, const double precio, Setup &s)
 
 // El rango a favor que está formando la vela en curso, visto con el marco menor: ya barrió el extremo
 // de la anterior (sin tomar también el otro, porque entonces no puede ser rango), el precio volvió
-// dentro y el marco menor formó un rango a favor después del barrido (crt/marcos.py: anticipo).
+// dentro y el marco menor formó un rango a favor después del barrido (crt/marcos.py: anticipo). Sin
+// exigir el marco menor (regla candidata para el 4H), basta con el barrido y la vuelta dentro: la
+// reacción la confirma el order block de M15.
 bool CMarco::DameAnticipo(const int dir, const double precio, Setup &s)
   {
    ZeroMemory(s);
    int nc = ArraySize(cerradas);
-   if(menor == NULL || !hay_parcial || nc == 0)
+   if((exige_menor && menor == NULL) || !hay_parcial || nc == 0)
       return false;
    int ib = (dir > 0) ? i_barrido_alc : i_barrido_baj;
    Vela previa = cerradas[nc - 1];
    if(ib < 0 || !(previa.minimo < precio && precio < previa.maximo) || Tomando(dir))
       return false;
-   Setup sm;
-   if(!menor.DameSetup(dir, precio, sm))
-      return false;
-   // El rango cerrado del marco menor es de antes del barrido: vale el que se esté formando ahora (si no,
-   // un rango viejo de 4H que sigue activo taparía el verde anticipado del diario).
-   if(sm.i_inicio < ib && sm.via == VIA_CIERRE && !menor.DameAnticipo(dir, precio, sm))
-      return false;
-   if(sm.i_inicio < ib)
-      return false;
+   int i_inicio = ib;   // sin el marco menor, la entrada tiene que llegar después del barrido
+   if(exige_menor)
+     {
+      Setup sm;
+      if(!menor.DameSetup(dir, precio, sm))
+         return false;
+      // El rango cerrado del marco menor es de antes del barrido: vale el que se esté formando ahora (si no,
+      // un rango viejo de 4H que sigue activo taparía el verde anticipado del diario).
+      if(sm.i_inicio < ib && sm.via == VIA_CIERRE && !menor.DameAnticipo(dir, precio, sm))
+         return false;
+      if(sm.i_inicio < ib)
+         return false;
+      i_inicio = sm.i_inicio;
+     }
    s.idea1 = ClaveAnticipo(tipo, parcial.i_inicio, dir);
    s.idea2 = 0;
    s.direccion = dir;
    s.barrido = (dir > 0) ? parcial.minimo : parcial.maximo;
    s.objetivo = (dir > 0) ? previa.maximo : previa.minimo;
-   s.i_inicio = sm.i_inicio;
+   s.i_inicio = i_inicio;
    s.via = VIA_ANTICIPO;
    s.escenario = EscenarioDesdeUltimo(dir);
    s.vela1_rel = Relativo(previa);
@@ -1425,14 +1436,15 @@ bool EsOrderBlock(const Vela &anterior, const Vela &actual, const int dir)
    return verde && actual.cierre < actual.apertura && actual.cierre < anterior.apertura;
   }
 
-// Manda el semanal; si no dice nada, el mensual. Si se contradicen, no hay sesgo y no se opera.
+// Manda el semanal; si no dice nada, el mensual. Si se contradicen, no hay sesgo y no se opera (con
+// SesgoSinVetoMensual, regla candidata, manda el semanal aunque el mensual vaya en contra).
 int SesgoDelBot(void)
   {
    int s = g_w1.DireccionUltimo();
    int m = g_mn.DireccionUltimo();
    if(s == 0)
       return m;
-   return (m == -s) ? 0 : s;
+   return (m == -s && !SesgoSinVetoMensual) ? 0 : s;
   }
 
 // El sesgo con el que entra: el del bot o, en directo, el que haya puesto el equipo el lunes (decidido el
@@ -2992,7 +3004,7 @@ void Reiniciar(void)
    g_siguiente_id = 0;
    g_h1.Iniciar("H1", MARCO_H1, NULL);
    g_h3.Iniciar("H3", MARCO_H3, NULL);
-   g_h4.Iniciar("H4", MARCO_H4, GetPointer(g_h1), HoraInicio4H);
+   g_h4.Iniciar("H4", MARCO_H4, GetPointer(g_h1), HoraInicio4H, 0, !Anticipo4HSinEsperar1H);
    g_d1.Iniciar("D1", MARCO_D1, GetPointer(g_h4), 17, ToleranciaDiario);
    g_w1.Iniciar("W1", MARCO_W1, NULL);
    g_mn.Iniciar("MN", MARCO_MN, NULL);

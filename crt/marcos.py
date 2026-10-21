@@ -33,9 +33,14 @@ class Setup:
 
 
 class Marco:
-    def __init__(self, nombre: str, menor: Marco | None = None, inicio_4h: int = 17, tolerancia: float = 0.0):
+    def __init__(
+        self, nombre: str, menor: Marco | None = None, inicio_4h: int = 17, tolerancia: float = 0.0, exige_menor: bool = True
+    ):
         self.nombre = nombre
         self.menor = menor
+        # Para anticipar el rango, ¿hace falta un rango del marco menor después del barrido? Sin él (regla candidata
+        # para el 4H), basta con el barrido y la vuelta dentro: la reacción la confirma el order block de M15.
+        self.exige_menor = exige_menor
         self.inicio_4h = inicio_4h  # hora de Nueva York a la que empiezan las velas de 4H
         self.tolerancia = tolerancia  # cierre un poco por fuera que aún cuenta como rango (ver rangos.evaluar)
         self.cerradas: list[Vela] = []  # solo se guardan las últimas
@@ -118,26 +123,32 @@ class Marco:
 
     def anticipo(self, direccion: int, precio: float) -> Setup | None:
         """El rango a favor que está formando la vela en curso, visto con el marco menor, o None."""
-        if self.menor is None or self.parcial is None or not self.cerradas:
+        if (self.exige_menor and self.menor is None) or self.parcial is None or not self.cerradas:
             return None
         i_barrido = self.i_barrido[direccion]
         previa = self.cerradas[-1]
         if i_barrido is None or not previa.minimo < precio < previa.maximo or self.tomando(direccion):
             return None
-        menor = self.menor.setup(direccion, precio)
-        if menor is not None and menor.via == "cierre" and menor.i_inicio < i_barrido:
-            # El rango cerrado del marco menor es de antes del barrido: vale el que se esté formando ahora
-            # (si no, un rango viejo de 4H que sigue activo taparía el verde anticipado del diario).
-            menor = self.menor.anticipo(direccion, precio)
-        if menor is None or menor.i_inicio < i_barrido:
-            return None
+        if self.exige_menor:
+            menor = self.menor.setup(direccion, precio)
+            if menor is not None and menor.via == "cierre" and menor.i_inicio < i_barrido:
+                # El rango cerrado del marco menor es de antes del barrido: vale el que se esté formando ahora
+                # (si no, un rango viejo de 4H que sigue activo taparía el verde anticipado del diario).
+                menor = self.menor.anticipo(direccion, precio)
+            if menor is None or menor.i_inicio < i_barrido:
+                return None
+            i_inicio = menor.i_inicio
+        else:
+            # «Nos toma el alto, empieza a reaccionar, creamos el order block aquí y aquí pondríamos nuestra venta»
+            # (vídeo de la estrategia simple): la entrada tiene que llegar después del barrido.
+            i_inicio = i_barrido
         if direccion > 0:
             barrido, objetivo = self.parcial.minimo, previa.maximo
         else:
             barrido, objetivo = self.parcial.maximo, previa.minimo
         ids = (("anticipo", self.nombre, self.parcial.i_inicio, direccion),)
         return Setup(
-            ids, direccion, barrido, objetivo, menor.i_inicio, "anticipo", escenario(self.ultimo, direccion), self._relativo(previa)
+            ids, direccion, barrido, objetivo, i_inicio, "anticipo", escenario(self.ultimo, direccion), self._relativo(previa)
         )
 
     def color(self, direccion: int, precio: float) -> str:

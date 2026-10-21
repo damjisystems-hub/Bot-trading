@@ -13,7 +13,7 @@ Bot de trading con la estrategia CRT («Candle Range Theory») para el NASDAQ, e
 
 **Estado (21-10-2026):**
 - Las reglas, la memoria, el laboratorio, el examen y el cuaderno están programados y comprobados con pruebas
-  automáticas. Ya tienen lo de los veintitrés vídeos: 13 banderas rojas, 38 reglas candidatas, 60 situaciones en el
+  automáticas. Ya tienen lo de los veintitrés vídeos: 13 banderas rojas, 41 reglas candidatas, 60 situaciones en el
   examen y la disciplina de los vídeos de psicología y de cuentas.
 - **Prueba con datos reales del pasado (21 y 22-10-2026):** de 2005 a mayo de 2020 con precios de OANDA, y de 2021 a
   2025 con los de la demo de MetaQuotes (ver «Datos»). Con las reglas de hoy **pierde** en los tres tramos (unas 1.065
