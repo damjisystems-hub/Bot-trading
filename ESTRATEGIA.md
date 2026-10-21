@@ -136,6 +136,31 @@ Los costes son los supuestos de `crt/mercados.py`.
    bot no copia»): si la estrategia gana, la ventaja tiene que estar justo ahí, porque el patrón solo no la tiene. El
    examen dice por dónde empezar: el order block con el 4H a favor y el sesgo.
 
+## Copiar al autor sin engañarnos (empezado el 22-10-2026)
+
+El equipo decidió el 22-10-2026 empezar por que el bot haga lo que hace el autor: «potenciar al máximo, pero sin
+autoengañarse». Estas reglas se fijaron **antes** de mirar los casos:
+
+1. **Casos de búsqueda y casos guardados.**
+   - Búsqueda (19): los casos con fecha del euro y de la libra y el del NASDAQ del 17-11-2025. Se miran vela a vela para
+     ver en qué se diferencia el bot del autor.
+   - Guardados (13): los del NASDAQ de 2026 (tercer vídeo, vídeo de los 150.000 $ y vídeo de «la única vela»). No se
+     miran hasta el final: sirven para comprobar si las correcciones valen fuera de donde se buscaron.
+2. **Solo se cambia lo que dice el autor.** Cada corrección tiene que salir de sus palabras en los vídeos, no de lo que
+   haga pasar un caso. Se programa como regla candidata, apagada: el equipo decide si se enciende.
+3. **Se mide si hace lo mismo que el autor, no si gana.** En cada caso se mira si el bot compra, vende o no entra como
+   él. Los casos del vídeo del backtest se examinan con su modelo (sin sesgo ni diario), como dijo que lo hacía.
+4. **La prueba de dinero, una sola vez y al final**, en los tres tramos (2005–2011, 2012–2020 y 2021–2025), con 2026
+   aparte:
+   - la corrección **mejora** solo si sube la media por operación en los tres tramos;
+   - **gana** solo si la media es positiva en los tres tramos y, en total, por más de dos errores típicos;
+   - después de verla, no se retoca.
+
+**Punto de partida (reglas de hoy, precios de la demo):**
+- búsqueda: 7 de 19 bien; de los 15 casos en los que el autor entra, el bot entra igual en 3;
+- guardados: 3 de 13 bien; de los 10 en los que el autor entra, el bot entra igual en ninguno;
+- los casos en los que el autor no entra los acierta todos, pero solo porque el bot casi nunca entra.
+
 ## Horario
 
 - Todo va en **hora de Nueva York**, con su cambio de hora.
