@@ -115,5 +115,17 @@ class MismaMemoria(unittest.TestCase):
             self.assertEqual(f.read(3), b"\xef\xbb\xbf")
 
 
+class Telegram(unittest.TestCase):
+    def test_el_token_no_va_en_el_codigo(self):
+        # El token es una clave: lo pone el equipo en los parámetros de MT5, nunca en el archivo.
+        self.assertRegex(_fuente(), r'input string\s+TelegramToken\s+= "";')
+        self.assertRegex(_fuente(), r'input string\s+TelegramChatId\s+= "";')
+
+    def test_cada_aviso_al_movil_va_tambien_a_telegram(self):
+        cuerpo = re.search(r"void Notificar\(const string texto\)(.*?)\n  }", _fuente(), re.S)[1]
+        self.assertIn("AvisarTelegram(texto);", cuerpo)
+        self.assertNotIn("SendNotification(", re.sub(r"void Notificar\(.*?\n  }", "", _fuente(), flags=re.S))
+
+
 if __name__ == "__main__":
     unittest.main()

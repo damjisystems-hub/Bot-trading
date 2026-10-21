@@ -9,7 +9,7 @@
 - **Os frena** (vídeo de psicología): con el tope de pérdida del día entre todos los mercados, deja de avisar y os
   dice que cerréis el gráfico.
 
-**Estado (21-10-2026, versión 1.16):** está escrito, pero no se ha podido compilar en la sesión de Claude. Puede que al
+**Estado (21-10-2026, versión 1.17, con avisos por Telegram):** está escrito, pero no se ha podido compilar en la sesión de Claude. Puede que al
 compilarlo salga algún error. Si pasa, copiad el texto del error y pasádselo a Claude (ver la sección 8).
 
 **Por defecto solo avisa.** Nunca opera en una cuenta real, salvo que lo activéis a propósito.
@@ -136,6 +136,24 @@ MT5 tiene que estar abierto para que el bot funcione. Con el ordenador apagado n
 3. En el MT5 del ordenador: **Herramientas → Opciones → Notificaciones**.
 4. Marcad «Activar notificaciones push», pegad el MetaQuotes ID y pulsad «Probar».
 
+**También por Telegram (al instante, con el texto entero).** Llegan los mismos avisos que a la app de MT5. Se prepara
+una vez:
+
+1. En Telegram, buscad **@BotFather** (el que lleva la marca azul) y pulsad «Iniciar».
+2. Escribidle `/newbot`. Os pide un nombre (por ejemplo, «Bot CRT Damji») y un usuario que acabe en «bot» (por ejemplo,
+   `botcrt_damji_bot`).
+3. Os responde con el **token**, una línea larga de números y letras. Es una clave: guardadla y no la paséis a nadie.
+4. Pulsad el enlace de vuestro bot (t.me/…) y pulsad **«Iniciar»**. Si queréis que les llegue a todo el equipo, cread un
+   grupo, añadid el bot y escribid `/start` en el grupo.
+5. En MT5: **Herramientas → Opciones → Asesores expertos**. Marcad «Permitir WebRequest para las siguientes URL», añadid
+   `https://api.telegram.org` y pulsad Aceptar.
+6. En los parámetros del bot de cada gráfico (sección 2), pegad el token en **TelegramToken**. TelegramChatId, vacío.
+7. Al ponerlo en el gráfico, os tiene que llegar a Telegram «BOT CRT · … · en marcha». Si no, sale una ventana en MT5
+   que dice qué falta.
+
+El bot busca solo el chat (el último que escribió a vuestro bot) y lo guarda para siempre en
+`MQL5/Files/BotCRT/telegram_chat.txt`. Para cambiar de chat, borrad ese archivo y repetid el paso 4.
+
 Un aviso es así:
 
 > BOT CRT · COMPRA NAS100 · tras la apertura · Entrada 21480.5 · Stop 21410.0 · TP 21621.5 · 1 a 2 · 1 % = 0.35 lotes ·
@@ -199,6 +217,9 @@ Un aviso es así:
 | UsarReglasAprendidas | Usa las reglas aprendidas (`reglas_aprendidas.txt`): no entra en las situaciones que ha aprendido que pierden. Solo quitan entradas. | Sí |
 | ExportarBarras | Al arrancar y una vez al día, guarda los precios de M15 en `barras_ny_<mercado>.csv` para que el bot aprenda. | Sí |
 | MesesExportar | Meses de precios que guarda. | 60 |
+| **Telegram** | | |
+| TelegramToken | El token del bot de Telegram que da @BotFather (sección 3). Es una clave: no la paséis por chat ni en capturas. Vacío = sin Telegram. | vacío |
+| TelegramChatId | El número del chat donde llegan los avisos. Vacío = lo busca solo (el último chat que escribió al bot) y lo guarda en `MQL5/Files/BotCRT/telegram_chat.txt`. | vacío |
 | **Datos y memoria** | | |
 | DesfaseServidorNY | Horas que el reloj del servidor va por delante de Nueva York (ver abajo). | 7 |
 | DiferencialFijoPuntos | 0 = usa el diferencial real del bróker. Con un número, usa siempre ese (sirve para comparar con el Python). | 0 |

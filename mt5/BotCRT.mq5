@@ -31,7 +31,7 @@
 //
 // Si cambias una regla aquí, cámbiala también en crt/ (y al revés): los dos tienen que decidir igual.
 #property copyright   "Damji Systems"
-#property version     "1.16"
+#property version     "1.17"
 #property description "Bot CRT: avisa de las entradas de la estrategia CRT y apunta la memoria."
 #property description "Por defecto solo avisa. No opera en cuentas reales."
 
@@ -119,6 +119,10 @@ input group "Autoaprendizaje"
 input bool     UsarReglasAprendidas     = true;         // Usar las reglas aprendidas (reglas_aprendidas.txt; solo quitan entradas)
 input bool     ExportarBarras           = true;         // Exportar cada día los precios para que el bot aprenda (barras_ny_*.csv)
 input int      MesesExportar            = 60;           // Meses de precios que exportar
+
+input group "Telegram (avisos al instante, además de los de la app de MT5)"
+input string   TelegramToken            = "";           // Token del bot de Telegram (de @BotFather; vacío = sin Telegram)
+input string   TelegramChatId           = "";           // Número del chat (vacío = lo busca solo)
 
 input group "Datos y memoria"
 input int      DesfaseServidorNY        = 7;            // Horas que el servidor va por delante de Nueva York
@@ -215,6 +219,8 @@ input long     NumeroMagico             = 20261020;     // Número de las órden
 
 #define CABECERA_MEMORIA  "mercado,hora_ny,direccion,decision,sesion,dia_semana,sesgo_semanal,sesgo_mensual,diario,via_diario,via_4h,h3,h1,escenario,vela1_rel,stop_rel,objetivo_r,noticias,banderas,nota,entrada,stop,tp,resultado,r,mfe_r,mae_r,tomada"
 #define CABECERA_NOTICIAS "fecha,hora,moneda,evento,importancia"
+#define URL_TELEGRAM      "https://api.telegram.org"
+#define ARCHIVO_CHAT_TELEGRAM "BotCRT\\telegram_chat.txt"
 
 string DIAS[7] = {"domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"};
 
@@ -807,6 +813,8 @@ datetime  g_pend_hora[];             // señales en directo que seguían abierta
 int       g_pend_dir[];
 bool      g_pend_avisada[];
 string    g_ultima_senal = "";
+string    g_chat_telegram = "";      // el chat de Telegram que encontró solo (ver ChatTelegram)
+bool      g_fallo_telegram = false;  // un fallo de Telegram se avisa en una ventana una vez, no en cada mensaje
 int       g_desde_min = 60;
 int       g_hasta_min = 780;
 bool      g_esc_ok[4];               // escenarios permitidos: 0 = otro, 1, 2 y 3
@@ -1677,11 +1685,142 @@ string TextoLotes(const Senal &s)
    return riesgo + " = " + DoubleToString(lotes, DecimalesVolumen()) + " lotes";
   }
 
+// ───── Telegram ─────
+
+bool UsaTelegram(void)
+  {
+   return TelegramToken != "" && MQLInfoInteger(MQL_TESTER) == 0;
+  }
+
+void FalloDeTelegram(const string t)
+  {
+   Print("BotCRT: Telegram: ", t);
+   if(!g_fallo_telegram)
+      Alert("BotCRT: Telegram: " + t);
+   g_fallo_telegram = true;
+  }
+
+// El texto como va en una dirección web: letras y números tal cual y lo demás en %XX (UTF-8).
+string CodificarURL(const string texto)
+  {
+   uchar b[];
+   int n = StringToCharArray(texto, b, 0, WHOLE_ARRAY, CP_UTF8);
+   string r = "";
+   for(int i = 0; i < n && b[i] != 0; i++)
+     {
+      uchar c = b[i];
+      if((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '-' || c == '_' || c == '.' || c == '~')
+         r += CharToString(c);
+      else
+         r += StringFormat("%%%02X", c);
+     }
+   return r;
+  }
+
+// Llama a Telegram. Devuelve el código de la respuesta (200 = bien, -1 = no se pudo llamar).
+int PedirATelegram(const string metodo, const string cuerpo, string &respuesta)
+  {
+   char datos[], resultado[];
+   string cabeceras;
+   int n = StringToCharArray(cuerpo, datos, 0, WHOLE_ARRAY, CP_UTF8);
+   if(n > 0 && datos[n - 1] == 0)
+      ArrayResize(datos, n - 1);   // sin el 0 del final
+   ResetLastError();
+   int codigo = WebRequest("POST", URL_TELEGRAM + "/bot" + TelegramToken + "/" + metodo,
+                           "Content-Type: application/x-www-form-urlencoded\r\n", 5000, datos, resultado, cabeceras);
+   int error = GetLastError();
+   respuesta = (ArraySize(resultado) > 0) ? CharArrayToString(resultado, 0, WHOLE_ARRAY, CP_UTF8) : "";
+   if(codigo == -1)
+      FalloDeTelegram("no se ha podido llamar a Telegram (error " + IntegerToString(error) + "). En MT5: Herramientas → "
+                      + "Opciones → Asesores expertos, marcad «Permitir WebRequest para las siguientes URL» y añadid "
+                      + URL_TELEGRAM + ". Si ya está, mirad que haya internet.");
+   else if(codigo == 401 || codigo == 404)
+      FalloDeTelegram("Telegram no reconoce el token. Copiadlo otra vez de @BotFather en TelegramToken.");
+   return codigo;
+  }
+
+// El número del chat: el de TelegramChatId; si está vacío, el que ya encontró (telegram_chat.txt); si no, el del
+// último chat que escribió al bot de Telegram (por eso hay que pulsar «Iniciar» en él), y lo guarda.
+string ChatTelegram(void)
+  {
+   if(TelegramChatId != "")
+      return TelegramChatId;
+   if(g_chat_telegram != "")
+      return g_chat_telegram;
+   int h = FileOpen(ARCHIVO_CHAT_TELEGRAM, FILE_READ | FILE_TXT | FILE_ANSI | FILE_SHARE_READ);
+   if(h != INVALID_HANDLE)
+     {
+      g_chat_telegram = FileReadString(h);
+      FileClose(h);
+      StringTrimLeft(g_chat_telegram);
+      StringTrimRight(g_chat_telegram);
+      if(g_chat_telegram != "")
+         return g_chat_telegram;
+     }
+   string json;
+   if(PedirATelegram("getUpdates", "", json) != 200)
+      return "";
+   string marca = "\"chat\":{\"id\":";
+   int desde = -1;
+   for(int i = StringFind(json, marca); i >= 0; i = StringFind(json, marca, i + 1))
+      desde = i + StringLen(marca);
+   if(desde < 0)
+     {
+      FalloDeTelegram("vuestro bot de Telegram aún no tiene ningún mensaje. Abridlo en Telegram y pulsad «Iniciar» "
+                      + "(en un grupo, escribid /start). El bot lo vuelve a mirar en el siguiente aviso.");
+      return "";
+     }
+   string chat = "";
+   for(int k = desde; k < StringLen(json); k++)
+     {
+      ushort c = StringGetCharacter(json, k);
+      if(c != '-' && (c < '0' || c > '9'))
+         break;
+      chat += ShortToString(c);
+     }
+   if(chat == "")
+      return "";
+   g_chat_telegram = chat;
+   h = FileOpen(ARCHIVO_CHAT_TELEGRAM, FILE_WRITE | FILE_TXT | FILE_ANSI);
+   if(h != INVALID_HANDLE)
+     {
+      FileWriteString(h, chat);
+      FileClose(h);
+     }
+   Print("BotCRT: chat de Telegram encontrado: ", chat, " (guardado en MQL5/Files/", ARCHIVO_CHAT_TELEGRAM, ").");
+   return chat;
+  }
+
+void AvisarTelegram(const string texto)
+  {
+   if(!UsaTelegram())
+      return;
+   string chat = ChatTelegram();
+   if(chat == "")
+      return;
+   string respuesta;
+   int codigo = PedirATelegram("sendMessage", "chat_id=" + CodificarURL(chat) + "&text=" + CodificarURL(texto), respuesta);
+   if(codigo == 400 || codigo == 403)
+     {
+      FalloDeTelegram("Telegram no deja escribir en el chat " + chat + ". Abrid vuestro bot en Telegram y pulsad "
+                      + "«Iniciar» (o volved a añadirlo al grupo).");
+      if(TelegramChatId == "")
+        {
+         g_chat_telegram = "";                  // la próxima vez lo vuelve a buscar
+         FileDelete(ARCHIVO_CHAT_TELEGRAM);
+        }
+     }
+   else if(codigo != 200 && codigo > 0 && codigo != 401 && codigo != 404)
+      Print("BotCRT: Telegram respondió ", codigo, ": ", respuesta);
+  }
+
+// El aviso va a la app de MT5 del móvil y, si está puesto, a Telegram.
 void Notificar(const string texto)
   {
    string corto = (StringLen(texto) > 255) ? StringSubstr(texto, 0, 252) + "..." : texto;
-   if(!SendNotification(corto))
+   if(!SendNotification(corto) && !UsaTelegram())
       Print("BotCRT: no se pudo enviar el aviso al móvil (¿está puesto el MetaQuotes ID?). Error ", GetLastError());
+   AvisarTelegram(texto);
   }
 
 // La posición del bot en este mercado (por su número mágico), o 0 si no hay. No depende de lo que el bot
@@ -2938,6 +3077,7 @@ int OnInit(void)
    EventSetTimer(5);
    ActualizarPanel();
    Print("BotCRT: arrancado en ", _Symbol, ". Memoria en MQL5/Files/", g_ruta_memoria);
+   AvisarTelegram("BOT CRT · " + g_mercado + " · en marcha: los avisos de este mercado llegarán aquí.");
    return INIT_SUCCEEDED;
   }
 
