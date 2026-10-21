@@ -156,9 +156,13 @@ autoengañarse». Estas reglas se fijaron **antes** de mirar los casos:
    - **gana** solo si la media es positiva en los tres tramos y, en total, por más de dos errores típicos;
    - después de verla, no se retoca.
 
+**Un descuido, contado:** el 22-10 se leyó por error la transcripción del vídeo de «la única vela» (sin mirar sus
+precios). Por limpieza, su caso pasa a búsqueda: quedan 20 de búsqueda y 12 guardados (el tercer vídeo y el de los
+150.000 $). Las transcripciones de esos dos vídeos no se leen hasta el final.
+
 **Punto de partida (reglas de hoy, precios de la demo):**
-- búsqueda: 7 de 19 bien; de los 15 casos en los que el autor entra, el bot entra igual en 3;
-- guardados: 3 de 13 bien; de los 10 en los que el autor entra, el bot entra igual en ninguno;
+- búsqueda: 7 de 20 bien; de los 16 casos en los que el autor entra, el bot entra igual en 3;
+- guardados: 3 de 12 bien; de los 9 en los que el autor entra, el bot entra igual en ninguno;
 - los casos en los que el autor no entra los acierta todos, pero solo porque el bot casi nunca entra.
 
 ## Horario
