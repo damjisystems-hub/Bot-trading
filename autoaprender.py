@@ -30,13 +30,17 @@ def nombre_de_archivo(nombre: str) -> str:
     return re.sub(r'[\\/:*?"<>| ]', "_", nombre)
 
 
+# Otros nombres con los que puede llegar un mercado: el corto que pone el equipo o el símbolo del bróker.
+OTROS_NOMBRES = {"oro": "oro", "xauusd": "oro", "nas100": "nasdaq", "us100": "nasdaq", "ustec": "nasdaq"}
+
+
 def mercado_del_archivo(ruta: str) -> str | None:
     """«barras_ny_Oro_(XAU_USD).csv» → «oro». Si el nombre no es el de un mercado del bot, None."""
-    base = os.path.basename(ruta)[len("barras_ny_") : -len(".csv")]
+    base = os.path.basename(ruta)[len("barras_ny_") : -len(".csv")].lower()
     for clave, m in MERCADOS.items():
-        if base in (nombre_de_archivo(m.nombre), clave, clave.upper()):
+        if base in (nombre_de_archivo(m.nombre).lower(), clave):
             return clave
-    return None
+    return OTROS_NOMBRES.get(base)
 
 
 def aprender_uno(barras, clave: str, ruta_reglas: str) -> str:

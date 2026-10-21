@@ -88,6 +88,11 @@ class ArchivoDeReglas(unittest.TestCase):
         self.assertEqual(mercado_del_archivo("barras_ny_EUR_USD.csv"), "eurusd")
         self.assertEqual(mercado_del_archivo("barras_ny_Oro_(XAU_USD).csv"), "oro")
         self.assertEqual(mercado_del_archivo("barras_ny_NASDAQ.csv"), "nasdaq")
+        # Con el nombre corto o vacío (entonces va el símbolo del bróker), también.
+        self.assertEqual(mercado_del_archivo("barras_ny_Oro.csv"), "oro")
+        self.assertEqual(mercado_del_archivo("barras_ny_XAUUSD.csv"), "oro")
+        self.assertEqual(mercado_del_archivo("barras_ny_EURUSD.csv"), "eurusd")
+        self.assertEqual(mercado_del_archivo("barras_ny_USTEC.csv"), "nasdaq")
         self.assertIsNone(mercado_del_archivo("barras_ny_US500.csv"))
 
 
