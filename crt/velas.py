@@ -7,9 +7,12 @@ las 5 el London lunch y la de las 9 Nueva York»), y las de 3H a las 17, 20, 23,
 de 3 horas de las 8» del vídeo de los 150.000 $).
 
 En ese mismo vídeo la vela de 4H de la apertura es «la de las 6»: es lo que sale en el gráfico de
-futuros de TradingView, cuyo día empieza a las 18:00 (velas de 4H a las 18, 22, 2, 6, 10 y 14). Por
-eso la hora a la que empiezan las velas de 4H se puede cambiar (inicio_4h) y el laboratorio prueba las
-dos.
+futuros de TradingView, cuyo día empieza a las 18:00 (velas de 4H a las 18, 22, 2, 6, 10 y 14). El
+equipo decidió el 20-10-2026 las de las 17:00 en todos los mercados; la hora se puede cambiar (inicio_4h).
+
+Las barras que caen en un día de trading de sábado o domingo (por ejemplo, las de los domingos antes de
+la apertura de las 17:00 o las de los viernes después del cierre, que traen algunos datos) se quitan: si
+no, formarían velas diarias y semanales falsas.
 
 Las horas se guardan «de reloj» (sin zona), en hora de Nueva York. Para ordenar se usa siempre el
 orden de llegada de las barras y nunca la hora: en el cambio de hora de otoño la 1:00 se repite.
@@ -119,11 +122,16 @@ def _hora_utc(texto: str) -> datetime:
     if re.fullmatch(r"\d+(\.\d+)?", t):  # segundos o milisegundos desde 1970
         n = float(t)
         return datetime.fromtimestamp(n / 1000 if n > 1e11 else n, tz=timezone.utc)
-    t = t.split(" GMT")[0].replace("Z", "+00:00")
+    zona = re.search(r" GMT([+-])(\d{2}):?(\d{2})$", t)  # hora local de Dukascopy: «… GMT+0100»
+    t = t[: zona.start()] if zona else t.split(" GMT")[0]
+    t = t.replace("Z", "+00:00")
     m = re.fullmatch(r"(\d{2})\.(\d{2})\.(\d{4})(.*)", t)  # 06.01.2025 14:30:00.000
     if m:
         t = f"{m[3]}-{m[2]}-{m[1]}{m[4]}"
     hora = datetime.fromisoformat(t.replace(".", "-", 2) if re.match(r"\d{4}\.", t) else t)
+    if zona:
+        desfase = timedelta(hours=int(zona[2]), minutes=int(zona[3])) * (1 if zona[1] == "+" else -1)
+        return (hora - desfase).replace(tzinfo=timezone.utc)
     return hora if hora.tzinfo else hora.replace(tzinfo=timezone.utc)
 
 
@@ -146,7 +154,8 @@ def leer_csv(ruta: str, formato: str = "auto", desfase_servidor: int = 7) -> lis
         f.seek(0)
         lector = csv.reader(f, delimiter=separador)
         cabecera = [c.strip().strip("<>").lower() for c in next(lector)]
-        es_mt5 = formato == "mt5" or (formato == "auto" and "date" in cabecera and "time" in cabecera)
+        # MT5 exporta la cabecera con corchetes: <DATE> <TIME>. Un CSV en UTC con «date» y «time» sin ellos no es de MT5.
+        es_mt5 = formato == "mt5" or (formato == "auto" and "<date>" in primera.lower() and "time" in cabecera)
         ia, ih, il, ic = (_columna(cabecera, c) for c in ("apertura", "maximo", "minimo", "cierre"))
         filas = []
         if es_mt5:
@@ -157,11 +166,17 @@ def leer_csv(ruta: str, formato: str = "auto", desfase_servidor: int = 7) -> lis
                 servidor = datetime.fromisoformat(f"{fila[i_fecha].replace('.', '-')} {fila[i_hora]}")
                 filas.append((servidor - timedelta(hours=desfase_servidor), fila[ia], fila[ih], fila[il], fila[ic]))
         else:
-            i_t = _columna(cabecera, "hora")
-            utc = [(_hora_utc(f[i_t]), f[ia], f[ih], f[il], f[ic]) for f in lector if f]
+            if "date" in cabecera and "time" in cabecera and not {"datetime", "timestamp"} & set(cabecera):
+                i_d, i_h = cabecera.index("date"), cabecera.index("time")  # la fecha y la hora en columnas separadas
+                texto = lambda f: f"{f[i_d]} {f[i_h]}"
+            else:
+                i_t = _columna(cabecera, "hora")
+                texto = lambda f: f[i_t]
+            utc = [(_hora_utc(texto(f)), f[ia], f[ih], f[il], f[ic]) for f in lector if f]
             utc.sort(key=lambda x: x[0])
             filas = [(t.astimezone(NUEVA_YORK).replace(tzinfo=None), *resto) for t, *resto in utc]
     _comprobar_frecuencia(filas)
+    filas = [f for f in filas if dia_de_trading(f[0]).weekday() < 5]  # fuera los días de trading de sábado y domingo
     return agrupar_en_m15(filas)
 
 

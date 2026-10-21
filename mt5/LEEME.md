@@ -9,7 +9,7 @@
 - **Os frena** (vídeo de psicología): con el tope de pérdida del día entre todos los mercados, deja de avisar y os
   dice que cerréis el gráfico.
 
-**Estado (20-10-2026, versión 1.14):** está escrito, pero no se ha podido compilar en la sesión de Claude. Puede que al
+**Estado (21-10-2026, versión 1.15):** está escrito, pero no se ha podido compilar en la sesión de Claude. Puede que al
 compilarlo salga algún error. Si pasa, copiad el texto del error y pasádselo a Claude (ver la sección 8).
 
 **Por defecto solo avisa.** Nunca opera en una cuenta real, salvo que lo activéis a propósito.
@@ -51,9 +51,21 @@ de fiarse de él. Por este orden:
    - El riesgo (1 %) y el tope del día (3 R) ya vienen puestos, como está decidido. PermitirCuentaReal, siempre «No».
    - Las reglas candidatas, apagadas: solo se encienden si el laboratorio las aprueba y lo decidís vosotros.
 7. **Avisos al móvil** (sección 3).
-8. **El ordenador, encendido de 7:00 a 19:00 (hora de España)**, con MT5 abierto y sin que entre en reposo. Si se
-   duerme o se apaga, el bot no ve nada. Si no puede quedarse encendido, MetaQuotes alquila servidores (VPS) donde
-   dejarlo funcionando, pero son de pago: decididlo antes.
+8. **El ordenador, encendido toda la semana** (del domingo por la noche al viernes a las 23:00, hora de España), con
+   MT5 abierto y sin que entre en reposo. Las entradas son de 7:00 a 19:00 de España, pero una operación puede seguir
+   abierta de noche y el viernes el bot la cierra a las 16:45 de Nueva York (22:45 en España). Si el ordenador se
+   apaga:
+   - la operación sigue en la cuenta con su stop y su TP, pero sin el cierre del viernes ni las salidas por reglas;
+   - al volver a arrancar, el bot la reconoce por su número mágico, la sigue vigilando y os avisa al móvil;
+   - las señales que seguían abiertas se apuntan en la memoria cuando se cierran (las guarda en
+     `MQL5/Files/BotCRT/abiertas_*.bin`).
+
+   Si no puede quedarse encendido, MetaQuotes alquila servidores (VPS) donde dejarlo funcionando, pero son de pago:
+   decididlo antes.
+9. **La hora del servidor.** Al arrancar, el bot compara la hora del servidor con la de Nueva York (con el reloj del
+   ordenador) y, si no cuadra con DesfaseServidorNY, os avisa con el número que hay que poner. Pasa con los brókeres
+   que cambian de hora con las fechas europeas: entre el último domingo de octubre y el primero de noviembre (y entre
+   el segundo y el último domingo de marzo) van una hora menos. Si avisa, cambiad DesfaseServidorNY esas semanas.
 
 **La rutina:**
 
@@ -166,7 +178,7 @@ Un aviso es así:
 | DesfaseServidorNY | Horas que el reloj del servidor va por delante de Nueva York (ver abajo). | 7 |
 | DiferencialFijoPuntos | 0 = usa el diferencial real del bróker. Con un número, usa siempre ese (sirve para comparar con el Python). | 0 |
 | MesesHistoria | Meses de historia que repasa al arrancar, para saber cómo está el mercado. | 24 |
-| EscribirMemoriaHistorica | Apunta también en la memoria lo que habría hecho en esa historia. | No |
+| EscribirMemoriaHistorica | Apunta en `historia_<mercado>.csv` lo que habría hecho en esa historia (para comprobarlo con el Python). La memoria en directo no se toca. | No |
 | ExportarNoticias | Al arrancar, guarda las noticias fuertes de USD, EUR y GBP en `noticias.csv` para el laboratorio. | No |
 | AniosNoticias | Años de noticias que exporta. | 3 |
 | NumeroMagico | Número con el que el bot marca sus órdenes. | 20261020 |
@@ -245,8 +257,15 @@ Fantasmas siguiéndose: 2
 - En una cuenta real no opera, salvo con PermitirCuentaReal. Si alguien lo activa, el bot lo grita en el diario de MT5
   al arrancar.
 - Si MT5 se desconecta y una señal le llega con más de 20 minutos de retraso, no avisa ni opera, pero la apunta.
-- El viernes cierra lo que haya abierto: en la cuenta, a las 16:55 de Nueva York, para no dejarlo abierto durante el
-  parón del fin de semana (con CierreDiario, cada día). En la memoria lo apunta al cierre de las 17:00, como el Python.
+- El viernes cierra lo que haya abierto: en la cuenta, a las 16:45 de Nueva York (algunos brókeres paran antes de las
+  17:00), para no dejarlo abierto durante el parón del fin de semana (con CierreDiario, cada día). Cierra también una
+  posición suya que no recuerde. En la memoria lo apunta al cierre de las 17:00, como el Python.
+- **Si una orden no entra en la cuenta** (trading algorítmico apagado, stop demasiado cerca para el bróker, sin margen…),
+  llega un aviso al móvil que empieza por «NO HA ENTRADO EN LA CUENTA» con el motivo. El bot sigue la operación en su
+  memoria igual, para medir la estrategia.
+- **Nunca abre dos posiciones** en el mismo mercado: si ya hay una suya en la cuenta, no entra y avisa.
+- **Si el bot da por cerrada una operación y en la cuenta sigue abierta** (por ejemplo, el diferencial del bróker era
+  distinto), la cierra: la cuenta nunca se queda con una posición que el bot ya no vigila.
 - **Tope de pérdida del día:** cada bot deja lo que lleva hoy en una variable global de MT5 (Herramientas → Variables
   globales, las que empiezan por `BotCRT.`) y suma las de los demás. Así el tope vale para todos los mercados juntos.
   Cuenta las operaciones del bot, no las que hagáis a mano: esas, apuntadlas en el cuaderno (`cuaderno/`).
@@ -268,5 +287,6 @@ Copiad el texto exacto del error (con su número de línea) y pasádselo a Claud
    - DiferencialFijoPuntos con el diferencial de `crt/mercados.py`: NASDAQ con 1 decimal, 15; EUR/USD, 8; GBP/USD, 12; oro, 30;
    - ColchonStopPuntos con el colchón de la tabla;
    - EscribirMemoriaHistorica activado.
-3. Pasadle a Claude la memoria y las barras. Las dos memorias tienen que tener las mismas entradas, salvo en los
-   primeros días, mientras el bot «se pone al día».
+3. Pasadle a Claude `historia_<mercado>.csv` (lo que habría hecho en la historia; va aparte para no mezclarse con la
+   memoria de lo que hace en directo, que nunca se borra) y las barras. Las dos memorias tienen que tener las mismas
+   entradas, salvo en los primeros días, mientras el bot «se pone al día».

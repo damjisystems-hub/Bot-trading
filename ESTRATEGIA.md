@@ -296,11 +296,32 @@ No cambian las reglas: hacen que el código haga lo que ya decían.
   el rango viejo siguiera activo.
 - Bot de MT5 en vivo: la barra que acaba a las 17:00 se procesa cuando llega la siguiente, y en NASDAQ y oro eso es tras
   el parón (el viernes, el domingo por la noche). La posición de la cuenta demo se quedaba abierta todo el fin de
-  semana. Ahora se cierra a las 16:55 de Nueva York; la memoria la sigue apuntando al cierre de la barra, como el Python.
+  semana. Ahora se cierra a las 16:45 de Nueva York; la memoria la sigue apuntando al cierre de la barra, como el Python.
 - El aviso al móvil ponía siempre «1 a 2», aunque el TP estuviera en otro sitio por una regla candidata. Ahora pone el
   ratio de verdad.
 
+## Correcciones del código (21-10-2026)
+
+Salen de dos revisiones a fondo del código (una del bot de MT5 y otra comparando el Python con el MT5). Con los mismos
+precios, los dos bots deciden igual.
+
+- **Barras de fin de semana:** algunos datos traen barras de los domingos antes de la apertura o de los viernes después
+  del cierre. Formaban velas diarias y semanales falsas y cambiaban el sesgo. Ahora se quitan, en los dos bots.
+- **El diario anticipado:** un rango de 4H viejo, formado antes del barrido del diario, tapaba el rango de 4H que se
+  estaba formando después, y el diario no se ponía en verde. Es el mismo fallo que el de volver a entrar tras un stop.
+- **Lectura de datos:** la hora local de Dukascopy («GMT+0100») se leía como UTC, y un CSV en UTC con la fecha y la hora
+  en columnas separadas se tomaba por uno de MT5.
+- **Un tope de pérdida o una vela 1 mínima de 0** querían decir cosas distintas en cada bot. Ahora, en los dos, 0 es
+  «apagado».
+- **Bot de MT5 en directo** (versión 1.15):
+  - al reiniciar MT5 reconoce su posición en la cuenta y las señales que seguían abiertas;
+  - avisa al móvil si una orden no entra;
+  - nunca abre dos posiciones en el mismo mercado;
+  - cierra en la cuenta lo que él da por cerrado;
+  - redondea el stop y el TP al salto del símbolo;
+  - comprueba la hora del servidor;
+  - guarda la historia aparte de la memoria en directo.
+
 ## Lo que todavía no hace
 
-- En la prueba con el pasado, aplicar el tope de pérdida sumando todos los mercados (cada mercado va solo).
 - Operar contra el sesgo, usar rangos de 8H o 2H, y las demás cosas de «Lo que el bot no copia».

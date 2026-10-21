@@ -27,7 +27,7 @@
 //
 // Si cambias una regla aquí, cámbiala también en crt/ (y al revés): los dos tienen que decidir igual.
 #property copyright   "Damji Systems"
-#property version     "1.14"
+#property version     "1.15"
 #property description "Bot CRT: avisa de las entradas de la estrategia CRT y apunta la memoria."
 #property description "Por defecto solo avisa. No opera en cuentas reales."
 
@@ -148,7 +148,7 @@ input long     NumeroMagico             = 20261020;     // Número de las órden
 #define MINUTOS_TARDE     20         // una barra que llega con más retraso no avisa ni opera
 #define VELA_DE_LAS_9_MIN 540        // 9:00 de Nueva York, en minutos
 #define FIN_DEL_DIA_MIN   1020       // 17:00 de Nueva York, en minutos
-#define MINUTOS_ANTES_DEL_PARON 5    // en vivo, la posición de la cuenta se cierra estos minutos antes del cierre
+#define MINUTOS_ANTES_DEL_PARON 15   // en vivo, la posición de la cuenta se cierra estos minutos antes del cierre (algunos brókeres paran antes)
 #define MAX_IDEAS         4000       // ideas que se recuerdan (usadas y vistas)
 #define VACIO             EMPTY_VALUE
 
@@ -270,6 +270,7 @@ struct Senal
    double            objetivo_r;
    int               banderas;    // banderas rojas (bits BAN_*)
    bool              apuntar;     // escribirla en la memoria
+   bool              de_directo;  // decidida en directo: va a memoria_*.csv; las de la historia, a historia_*.csv
    bool              hay_op;
    bool              tomada;
    bool              avisada;
@@ -699,6 +700,10 @@ bool CMarco::DameAnticipo(const int dir, const double precio, Setup &s)
    Setup sm;
    if(!menor.DameSetup(dir, precio, sm))
       return false;
+   // El rango cerrado del marco menor es de antes del barrido: vale el que se esté formando ahora (si no,
+   // un rango viejo de 4H que sigue activo taparía el verde anticipado del diario).
+   if(sm.i_inicio < ib && sm.via == VIA_CIERRE && !menor.DameAnticipo(dir, precio, sm))
+      return false;
    if(sm.i_inicio < ib)
       return false;
    s.idea1 = ClaveAnticipo(tipo, parcial.i_inicio, dir);
@@ -782,6 +787,10 @@ bool      g_en_vivo = false;
 bool      g_tardia = false;
 string    g_mercado = "";
 string    g_ruta_memoria = "";
+string    g_ruta_historia = "";      // lo que habría hecho en la historia (con EscribirMemoriaHistorica)
+datetime  g_pend_hora[];             // señales en directo que seguían abiertas al cerrar MT5 (ver GuardarPendientes)
+int       g_pend_dir[];
+bool      g_pend_avisada[];
 string    g_ultima_senal = "";
 int       g_desde_min = 60;
 int       g_hasta_min = 780;
@@ -1420,6 +1429,51 @@ void SumarOperacionDelDia(const long dia)
 
 datetime AhoraNY(void) { return (datetime)((long)TimeTradeServer() - (long)DesfaseServidorNY * SEG_HORA); }
 
+// El domingo número n de un mes, a las 0:00.
+datetime DomingoDelMes(const int anio, const int mes, const int n)
+  {
+   MqlDateTime st;
+   ZeroMemory(st);
+   st.year = anio;
+   st.mon = mes;
+   st.day = 1;
+   datetime d = StructToTime(st);
+   TimeToStruct(d, st);
+   int hasta_domingo = (7 - st.day_of_week) % 7;
+   return (datetime)((long)d + (long)(hasta_domingo + 7 * (n - 1)) * SEG_DIA);
+  }
+
+// Horas de Nueva York respecto a UTC: −4 con el horario de verano (del segundo domingo de marzo al primero
+// de noviembre, a las 2:00 de allí) y −5 el resto del año.
+int NuevaYorkMenosUTC(const datetime utc)
+  {
+   MqlDateTime st;
+   TimeToStruct(utc, st);
+   datetime inicio = (datetime)((long)DomingoDelMes(st.year, 3, 2) + 7 * SEG_HORA);   // 2:00 de NY = 7:00 UTC
+   datetime fin = (datetime)((long)DomingoDelMes(st.year, 11, 1) + 6 * SEG_HORA);     // 2:00 de NY = 6:00 UTC
+   return (utc >= inicio && utc < fin) ? -4 : -5;
+  }
+
+// Avisa si el servidor no va DesfaseServidorNY horas por delante de Nueva York (por ejemplo, un bróker que
+// cambia de hora con las fechas europeas y no con las de EE. UU.): si no cuadra, todas las horas del bot
+// van mal. Usa el reloj del ordenador, así que tiene que estar en hora.
+void ComprobarHoraDelServidor(void)
+  {
+   if(MQLInfoInteger(MQL_TESTER) != 0 || TerminalInfoInteger(TERMINAL_CONNECTED) == 0)
+      return;
+   datetime utc = TimeGMT();
+   long servidor = (long)MathRound(((double)TimeTradeServer() - (double)utc) / SEG_HORA);
+   long real = servidor - NuevaYorkMenosUTC(utc);
+   if(real == DesfaseServidorNY)
+      return;
+   string t = "BotCRT: ¡OJO! Ahora el servidor va " + IntegerToString(real) + " horas por delante de Nueva York y "
+              + "DesfaseServidorNY dice " + IntegerToString(DesfaseServidorNY) + ". Si el reloj del ordenador está bien, "
+              + "cambiad DesfaseServidorNY a " + IntegerToString(real) + ": si no, las velas y los horarios del bot van mal.";
+   Print(t);
+   Alert(t);
+   Notificar(t);
+  }
+
 // El siguiente día de trading de lunes a viernes (el 1-1-1970 fue jueves).
 long SiguienteDiaHabil(const long dia)
   {
@@ -1492,12 +1546,62 @@ void Apuntar(const Senal &s)
    l += "," + (cerrada ? Numero(s.mfe) : "");
    l += "," + (cerrada ? Numero(s.mae) : "");
    l += "," + ((s.hay_op && s.tomada) ? "si" : "no");
-   EscribirLinea(g_ruta_memoria, l, CABECERA_MEMORIA);
+   EscribirLinea(s.de_directo ? g_ruta_memoria : g_ruta_historia, l, CABECERA_MEMORIA);
+  }
+
+// Las señales en directo que siguen abiertas se guardan (MQL5/Files/BotCRT/abiertas_<mercado>.bin) para que,
+// si se cierra MT5, al volver a arrancar se reconozcan en la historia y se apunten cuando se cierren. Si no,
+// las que duran de un día para otro se perderían de la memoria.
+string RutaPendientes(void) { return "BotCRT\\abiertas_" + NombreDeArchivo(g_mercado) + ".bin"; }
+
+void GuardarPendientes(void)
+  {
+   if(!g_listo || MQLInfoInteger(MQL_TESTER) != 0)
+      return;
+   int h = FileOpen(RutaPendientes(), FILE_WRITE | FILE_BIN);
+   if(h == INVALID_HANDLE)
+      return;
+   if(g_hay_real && g_real.de_directo)
+      FileWriteStruct(h, g_real);
+   for(int k = 0; k < ArraySize(g_fantasmas); k++)
+      if(g_fantasmas[k].de_directo)
+         FileWriteStruct(h, g_fantasmas[k]);
+   FileClose(h);
+  }
+
+void CargarPendientes(void)
+  {
+   ArrayResize(g_pend_hora, 0);
+   ArrayResize(g_pend_dir, 0);
+   ArrayResize(g_pend_avisada, 0);
+   if(MQLInfoInteger(MQL_TESTER) != 0)
+      return;
+   int h = FileOpen(RutaPendientes(), FILE_READ | FILE_BIN);
+   if(h == INVALID_HANDLE)
+      return;
+   Senal p;
+   while(!FileIsEnding(h) && FileReadStruct(h, p) > 0)
+     {
+      int n = ArraySize(g_pend_hora);
+      ArrayResize(g_pend_hora, n + 1);
+      ArrayResize(g_pend_dir, n + 1);
+      ArrayResize(g_pend_avisada, n + 1);
+      g_pend_hora[n] = p.hora_ny;
+      g_pend_dir[n] = p.direccion;
+      g_pend_avisada[n] = p.avisada;
+     }
+   FileClose(h);
   }
 
 // ───────────────────────── Avisos y órdenes ─────────────────────────
 
-bool EsCuentaDemo(void) { return AccountInfoInteger(ACCOUNT_TRADE_MODE) == ACCOUNT_TRADE_MODE_DEMO; }
+// Demo solo si lo dice la cuenta conectada (con la cuenta sin leer, AccountInfoInteger devuelve 0, que
+// es también el valor de «demo»).
+bool EsCuentaDemo(void)
+  {
+   return TerminalInfoInteger(TERMINAL_CONNECTED) != 0 && AccountInfoInteger(ACCOUNT_LOGIN) > 0
+          && AccountInfoInteger(ACCOUNT_TRADE_MODE) == ACCOUNT_TRADE_MODE_DEMO;
+  }
 
 bool PuedeOperar(void)
   {
@@ -1531,7 +1635,7 @@ double Lotes(const Senal &s)
    double lotes = dinero / MathAbs(perdida);
    double paso = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
    if(paso > 0)
-      lotes = MathFloor(lotes / paso + 1e-9) * paso;
+      lotes = NormalizeDouble(MathFloor(lotes / paso + 1e-9) * paso, DecimalesVolumen());
    double maximo = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
    if(maximo > 0 && lotes > maximo)
       lotes = maximo;
@@ -1555,6 +1659,36 @@ void Notificar(const string texto)
    string corto = (StringLen(texto) > 255) ? StringSubstr(texto, 0, 252) + "..." : texto;
    if(!SendNotification(corto))
       Print("BotCRT: no se pudo enviar el aviso al móvil (¿está puesto el MetaQuotes ID?). Error ", GetLastError());
+  }
+
+// La posición del bot en este mercado (por su número mágico), o 0 si no hay. No depende de lo que el bot
+// recuerde: sirve también después de reiniciar MT5.
+ulong PosicionDelBot(void)
+  {
+   for(int k = PositionsTotal() - 1; k >= 0; k--)
+     {
+      ulong t = PositionGetTicket(k);
+      if(t > 0 && PositionGetString(POSITION_SYMBOL) == _Symbol && PositionGetInteger(POSITION_MAGIC) == NumeroMagico)
+         return t;
+     }
+   return 0;
+  }
+
+// Un precio redondeado al salto mínimo del símbolo (algunos índices van de 0,25 en 0,25 o de 1 en 1).
+double AlTick(const double precio)
+  {
+   double tick = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   if(tick <= 0)
+      return NormalizeDouble(precio, _Digits);
+   return NormalizeDouble(MathRound(precio / tick) * tick, _Digits);
+  }
+
+// Si la orden no entra en la cuenta, el aviso llega también al móvil (el de la entrada ya llegó).
+void FalloDeOrden(const string motivo)
+  {
+   string t = "BOT CRT · " + g_mercado + " · NO HA ENTRADO EN LA CUENTA: " + motivo;
+   Print(t);
+   Notificar(t);
   }
 
 void Avisar(Senal &s)
@@ -1582,37 +1716,54 @@ void Operar(Senal &s)
   {
    if(!PuedeOperar())
       return;
-   if(TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) == 0 || MQLInfoInteger(MQL_TRADE_ALLOWED) == 0)
+   if(TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) == 0 || MQLInfoInteger(MQL_TRADE_ALLOWED) == 0
+      || AccountInfoInteger(ACCOUNT_TRADE_ALLOWED) == 0 || AccountInfoInteger(ACCOUNT_TRADE_EXPERT) == 0)
      {
-      Print("BotCRT: no opera porque el «Trading algorítmico» está desactivado en MT5.");
+      FalloDeOrden("el «Trading algorítmico» está desactivado (en MT5 o en la cuenta)");
+      return;
+     }
+   if(PosicionDelBot() > 0)
+     {
+      FalloDeOrden("ya hay una posición del bot abierta en este mercado");
       return;
      }
    double lotes = Lotes(s);
    double minimo = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
    if(lotes <= 0 || lotes < minimo)
      {
-      Print("BotCRT: no opera: con este stop, el lote mínimo arriesga más del ", NumeroCorto(RiesgoPct), " %.");
+      FalloDeOrden("con este stop, el lote mínimo arriesga más del " + NumeroCorto(RiesgoPct) + " %");
       return;
      }
-   double sl = NormalizeDouble(s.stop_inicial, _Digits);
-   double tp = NormalizeDouble(s.tp, _Digits);
+   double sl = AlTick(s.stop_inicial);
+   double tp = AlTick(s.tp);
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double nivel = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point;
+   double dist_sl = (s.direccion > 0) ? bid - sl : sl - ask;
+   double dist_tp = (s.direccion > 0) ? tp - bid : ask - tp;
+   if(dist_sl <= nivel || dist_tp <= nivel)
+     {
+      FalloDeOrden("el stop o el TP quedan más cerca del precio de lo que permite el bróker");
+      return;
+     }
    bool ok = (s.direccion > 0) ? g_trade.Buy(lotes, _Symbol, 0.0, sl, tp, "BotCRT")
                                : g_trade.Sell(lotes, _Symbol, 0.0, sl, tp, "BotCRT");
    uint codigo = g_trade.ResultRetcode();
-   if(ok && (codigo == TRADE_RETCODE_DONE || codigo == TRADE_RETCODE_PLACED))
+   if(ok && (codigo == TRADE_RETCODE_DONE || codigo == TRADE_RETCODE_DONE_PARTIAL || codigo == TRADE_RETCODE_PLACED))
      {
-      s.ticket = g_trade.ResultOrder();
+      ulong pos = PosicionDelBot();
+      s.ticket = (pos > 0) ? pos : g_trade.ResultOrder();   // en cuentas «netting» la posición tiene su propio número
       Print("BotCRT: orden puesta (", DoubleToString(lotes, DecimalesVolumen()), " lotes).");
      }
    else
-      Print("BotCRT: la orden no ha entrado: ", codigo, " ", g_trade.ResultRetcodeDescription());
+      FalloDeOrden(IntegerToString((long)codigo) + " " + g_trade.ResultRetcodeDescription());
   }
 
 void MoverStopReal(const Senal &s)
   {
    if(s.ticket == 0 || !PositionSelectByTicket(s.ticket))
       return;
-   if(!g_trade.PositionModify(s.ticket, NormalizeDouble(s.stop, _Digits), NormalizeDouble(s.tp, _Digits)))
+   if(!g_trade.PositionModify(s.ticket, AlTick(s.stop), AlTick(s.tp)))
       Print("BotCRT: no he podido mover el stop a la entrada: ", g_trade.ResultRetcodeDescription());
   }
 
@@ -1702,8 +1853,11 @@ void Terminar(Senal &s)
       Print(t);
       Notificar(t);
      }
-   if(s.tomada && s.ticket > 0 && s.resultado != RES_TP && s.resultado != RES_SL && s.resultado != RES_BE)
-      CerrarReal(s);   // las salidas que no son el stop ni el TP de la orden se cierran a mano
+   // Si la posición sigue abierta en la cuenta, se cierra: las salidas que no son el stop ni el TP de la
+   // orden, y también cuando el bot da por tocado el stop o el TP y el bróker no (por el diferencial). Así
+   // la cuenta nunca se queda con una posición que el bot ya no vigila. Si ya está cerrada, no hace nada.
+   if(s.tomada && s.ticket > 0)
+      CerrarReal(s);
   }
 
 // La operación real se ha cerrado: se lleva la cuenta del día y de la racha de stops (crt/motor.py:
@@ -1839,7 +1993,7 @@ void CerrarTodo(const double cierre, const datetime hora, const int resultado)
 // del día, cada día. La memoria la apunta igual, al cierre de la barra, como el Python.
 void CerrarAntesDelParon(void)
   {
-   if(!g_listo || !g_hay_real || g_real.ticket == 0)
+   if(!g_listo)
       return;
    datetime ahora = AhoraNY();
    int m = MinutosDelDia(ahora);
@@ -1849,12 +2003,17 @@ void CerrarAntesDelParon(void)
    TimeToStruct(ahora, st);
    if(st.day_of_week != 5 && !CierreDiario)
       return;
-   CerrarReal(g_real);
-   if(!PositionSelectByTicket(g_real.ticket))
+   ulong pos = PosicionDelBot();   // también la que el bot no recuerde (por ejemplo, tras reiniciar MT5)
+   if(pos == 0)
+      return;
+   if(g_trade.PositionClose(pos))
      {
       Print("BotCRT: posición cerrada antes del cierre de las 17:00 de Nueva York.");
-      g_real.ticket = 0;
+      if(g_hay_real && g_real.ticket == pos)
+         g_real.ticket = 0;
      }
+   else
+      Print("BotCRT: no he podido cerrar la posición antes del parón: ", g_trade.ResultRetcodeDescription());
   }
 
 // Regla candidata: un rango de 1H en contra cierra la operación o, si va ganando y así se ha elegido,
@@ -2111,6 +2270,15 @@ void Mirar(const Vela &b, const int d)
    sen.stop_rel = VACIO;
    sen.objetivo_r = VACIO;
    sen.apuntar = g_en_vivo || EscribirMemoriaHistorica;
+   sen.de_directo = g_en_vivo;
+   for(int kp = 0; kp < ArraySize(g_pend_hora); kp++)
+      if(!g_en_vivo && g_pend_hora[kp] == hora && g_pend_dir[kp] == d)
+        {
+         // Se vio en directo antes de reiniciar MT5 y seguía abierta: se apunta cuando se cierre.
+         sen.apuntar = true;
+         sen.de_directo = true;
+         sen.avisada = g_pend_avisada[kp];
+        }
    sen.hay_op = (motivo_niveles == DEC_NINGUNA);
    if(sen.hay_op)
      {
@@ -2253,6 +2421,9 @@ void ProcesarRates(const MqlRates &r, const bool en_vivo, const bool tardia)
   {
    Vela b;
    b.inicio = (datetime)((long)r.time - (long)DesfaseServidorNY * SEG_HORA);
+   long dia_semana = (DiaDeTrading(b.inicio) + 4) % 7;   // 0 domingo, 6 sábado (el 1-1-1970 fue jueves)
+   if(dia_semana == 0 || dia_semana == 6)
+      return;   // barras de un día de trading de sábado o domingo: formarían velas falsas (como en crt/velas.py)
    b.apertura = r.open;
    b.maximo = r.high;
    b.minimo = r.low;
@@ -2275,11 +2446,15 @@ bool CargarHistoria(void)
    datetime desde = (datetime)((long)abierta - (long)MesesHistoria * 31 * SEG_DIA);
    MqlRates barras[];
    int n = CopyRates(_Symbol, PERIOD_M15, desde, abierta, barras);
-   if(n <= 0)
+   if(n <= 0 || SeriesInfoInteger(_Symbol, PERIOD_M15, SERIES_SYNCHRONIZED) == 0)
      {
       Print("BotCRT: esperando a que MT5 cargue la historia de ", _Symbol, " (error ", GetLastError(), ").");
       return false;
      }
+   if(barras[0].time > desde + 31 * SEG_DIA)
+      Print("BotCRT: ¡ojo! solo hay historia de M15 desde el ", TimeToString(barras[0].time, TIME_DATE),
+            ". Subid «Máx. barras en el gráfico» (Herramientas → Opciones → Gráficos) o bajad más historia.");
+   CargarPendientes();
    int procesadas = 0;
    for(int k = 0; k < n; k++)
      {
@@ -2291,6 +2466,21 @@ bool CargarHistoria(void)
      }
    g_en_vivo = true;
    Print("BotCRT: ", procesadas, " barras de 15 minutos de historia procesadas (desde ", TimeToString(desde, TIME_DATE), ").");
+   // Si en la cuenta ya hay una posición del bot (de antes de reiniciar MT5), se liga a la operación que
+   // el bot tiene abierta; si el bot no tiene ninguna, se avisa (tiene su stop y su TP en el bróker).
+   ulong pos = PosicionDelBot();
+   if(pos > 0)
+     {
+      if(g_hay_real)
+         g_real.ticket = pos;
+      string t = "BOT CRT · " + g_mercado + " · al arrancar ya había una posición del bot en la cuenta"
+                 + (g_hay_real ? ": la sigue vigilando." : ", y el bot no la tiene abierta: revisadla.");
+      Print(t);
+      Notificar(t);
+     }
+   ComprobarHoraDelServidor();
+   g_listo = true;
+   GuardarPendientes();
    return procesadas > 0;
   }
 
@@ -2318,6 +2508,7 @@ void RevisarBarrasNuevas(void)
       ProcesarRates(nuevas[k], true, retraso > MINUTOS_TARDE * 60);
       g_ultima_barra = nuevas[k].time;
      }
+   GuardarPendientes();
    AvisoDeTope();
    ActualizarPanel();
   }
@@ -2505,13 +2696,21 @@ int OnInit(void)
       Alert("BotCRT: revisad los parámetros (hora de las velas de 4H, tope de pérdida, pausa o tolerancia del diario).");
       return INIT_PARAMETERS_INCORRECT;
      }
+   if((DiarioBastaNoRojo ? 1 : 0) + (DiarioValeExpansiva ? 1 : 0) + (IgnorarDiario ? 1 : 0) > 1)
+     {
+      Alert("BotCRT: elegid solo una forma de mirar el diario (DiarioBastaNoRojo, DiarioValeExpansiva o IgnorarDiario).");
+      return INIT_PARAMETERS_INCORRECT;
+     }
    LeerEscenarios();
    g_mercado = (NombreMercado != "") ? NombreMercado : _Symbol;
    g_ruta_memoria = "BotCRT\\memoria_" + NombreDeArchivo(g_mercado) + ".csv";
+   g_ruta_historia = "BotCRT\\historia_" + NombreDeArchivo(g_mercado) + ".csv";
    FolderCreate("BotCRT");
    if(EscribirMemoriaHistorica)
-      FileDelete(g_ruta_memoria);   // la historia se vuelve a escribir entera
+      FileDelete(g_ruta_historia);  // la historia se vuelve a escribir entera; la memoria en directo no se toca
    g_trade.SetExpertMagicNumber((ulong)NumeroMagico);
+   g_trade.SetTypeFillingBySymbol(_Symbol);   // cada bróker acepta unos tipos de ejecución
+   g_trade.SetDeviationInPoints((ulong)MathMax(10.0, 3.0 * (double)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD)));
    AvisoDeCuenta();
    if(ExportarNoticias)
       ExportarNoticiasCsv();
@@ -2524,6 +2723,7 @@ int OnInit(void)
 
 void OnDeinit(const int reason)
   {
+   GuardarPendientes();
    EventKillTimer();
    Comment("");
   }

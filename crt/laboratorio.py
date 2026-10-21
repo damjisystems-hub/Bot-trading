@@ -1,8 +1,11 @@
 """Laboratorio: prueba cada regla candidata contra las reglas de hoy, en dos periodos.
 
 Una regla candidata solo se propone si mejora la media de R por operación en los dos periodos (antes
-y después de una fecha de corte) y deja suficientes operaciones para fiarse. El laboratorio nunca
-cambia las reglas: propone. Las cambia el equipo, en ESTRATEGIA.md y en el código.
+y después de una fecha de corte), deja suficientes operaciones para fiarse y la mejora es mayor que lo
+que puede dar la suerte. Con muchas ideas probadas, alguna mejora en los dos periodos por pura
+casualidad: por eso la mejora tiene que pasar de un «error típico» (lo que bailan las medias de un
+puñado de operaciones) en cada periodo. El laboratorio nunca cambia las reglas: propone. Las cambia el
+equipo, en ESTRATEGIA.md y en el código.
 """
 
 from __future__ import annotations
@@ -67,7 +70,14 @@ def necesita_noticias(cambios: dict) -> bool:
 def _stats(ops: list[Operacion]) -> dict:
     n = len(ops)
     total = sum(o.r for o in ops)
-    return {"n": n, "total": total, "media": total / n if n else 0.0, "acierto": sum(1 for o in ops if o.r > 0) / n if n else 0.0}
+    media = total / n if n else 0.0
+    varianza = sum((o.r - media) ** 2 for o in ops) / (n - 1) if n > 1 else 0.0
+    return {"n": n, "total": total, "media": media, "acierto": sum(1 for o in ops if o.r > 0) / n if n else 0.0, "varianza": varianza}
+
+
+def error_tipico(s: dict) -> float:
+    """Cuánto puede bailar la media de R por pura suerte con esas operaciones."""
+    return (s.get("varianza", 0.0) / s["n"]) ** 0.5 if s["n"] else 0.0
 
 
 def partir(res: Resultado, corte: datetime) -> tuple[dict, dict]:
@@ -80,8 +90,11 @@ def veredicto(base: tuple[dict, dict], candidata: tuple[dict, dict]) -> str:
     if min(candidata[0]["n"], candidata[1]["n"]) < MINIMO_OPERACIONES:
         return "pocas operaciones para saberlo"
     mejoras = [c["media"] > b["media"] for b, c in zip(base, candidata)]
+    claras = [c["media"] - b["media"] > (error_tipico(b) ** 2 + error_tipico(c) ** 2) ** 0.5 for b, c in zip(base, candidata)]
+    if all(claras):
+        return "MEJORA clara en los dos periodos: proponer al equipo"
     if all(mejoras):
-        return "MEJORA en los dos periodos: proponer al equipo"
+        return "mejora en los dos periodos, pero poco: puede ser suerte"
     if any(mejoras):
         return "dudosa: mejora solo en un periodo"
     return "no mejora"
@@ -121,8 +134,11 @@ def texto(corte: datetime, base: Prueba, pruebas: list[Prueba], hay_noticias: bo
     b1, b2 = base.periodos
     lineas = [
         f"Laboratorio: cada idea contra las reglas de hoy, antes y después del {fecha}",
-        f"Reglas de hoy: antes {b1['n']} op. y media {_r(b1['media'])}; después {b2['n']} op. y media {_r(b2['media'])}.",
-        f"Una idea solo se propone si mejora la media en los dos periodos con al menos {MINIMO_OPERACIONES} operaciones en cada uno.",
+        f"Reglas de hoy: antes {b1['n']} op. y media {_r(b1['media'])} (± {_r(error_tipico(b1))[1:]}); "
+        f"después {b2['n']} op. y media {_r(b2['media'])} (± {_r(error_tipico(b2))[1:]}).",
+        f"Una idea solo se propone si mejora la media en los dos periodos, con al menos {MINIMO_OPERACIONES} operaciones en "
+        "cada uno y por más de lo que puede dar la suerte (± es ese margen: un «error típico»).",
+        f"Se prueban {len(pruebas)} ideas: alguna «mejora en los dos periodos, pero poco» saldrá por casualidad.",
         "",
     ]
     for p in pruebas:

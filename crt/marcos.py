@@ -125,6 +125,10 @@ class Marco:
         if i_barrido is None or not previa.minimo < precio < previa.maximo or self.tomando(direccion):
             return None
         menor = self.menor.setup(direccion, precio)
+        if menor is not None and menor.via == "cierre" and menor.i_inicio < i_barrido:
+            # El rango cerrado del marco menor es de antes del barrido: vale el que se esté formando ahora
+            # (si no, un rango viejo de 4H que sigue activo taparía el verde anticipado del diario).
+            menor = self.menor.anticipo(direccion, precio)
         if menor is None or menor.i_inicio < i_barrido:
             return None
         if direccion > 0:

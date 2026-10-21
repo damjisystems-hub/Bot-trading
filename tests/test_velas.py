@@ -95,6 +95,36 @@ class LecturaDeCsv(unittest.TestCase):
         barras = leer_csv(ruta)
         self.assertEqual([b.inicio for b in barras], [ny("2025-01-06 09:30"), ny("2025-07-07 09:30")])
 
+    def test_hora_local_de_dukascopy(self):
+        ruta = self._archivo(
+            "Local time,Open,High,Low,Close,Volume\n"
+            "06.01.2025 15:30:00.000 GMT+0100,1,2,0.5,1.5,10\n"
+            "07.07.2025 15:30:00.000 GMT+0200,1,2,0.5,1.5,10\n"
+        )
+        self.assertEqual([b.inicio for b in leer_csv(ruta)], [ny("2025-01-06 09:30"), ny("2025-07-07 09:30")])
+
+    def test_utc_con_la_fecha_y_la_hora_en_columnas_separadas_no_es_mt5(self):
+        ruta = self._archivo("date,time,open,high,low,close\n2025-01-06,14:30:00,1,2,0.5,1.5\n2025-01-06,14:45:00,1,2,0.5,1.5\n")
+        self.assertEqual([b.inicio for b in leer_csv(ruta)], [ny("2025-01-06 09:30"), ny("2025-01-06 09:45")])
+
+    def test_quita_las_barras_de_los_dias_de_trading_de_sabado_y_domingo(self):
+        # El viernes 10-1-2025 cierra a las 17:00 de Nueva York (22:00 UTC) y el domingo abre a las 17:00: las
+        # barras del viernes después del cierre y las del domingo antes de la apertura formarían velas falsas.
+        ruta = self._archivo(
+            "timestamp,open,high,low,close\n"
+            "2025-01-10 21:30:00,1,2,0.5,1.5\n"  # viernes 16:30 de Nueva York: vale
+            "2025-01-10 21:45:00,1,2,0.5,1.5\n"  # viernes 16:45: vale
+            "2025-01-10 22:00:00,1,2,0.5,1.5\n"  # viernes 17:00: fuera
+            "2025-01-12 20:00:00,1,2,0.5,1.5\n"  # domingo 15:00: fuera
+            "2025-01-12 20:15:00,1,2,0.5,1.5\n"  # domingo 15:15: fuera
+            "2025-01-12 22:00:00,1,2,0.5,1.5\n"  # domingo 17:00: es el lunes de trading, vale
+            "2025-01-12 22:15:00,1,2,0.5,1.5\n"  # domingo 17:15: vale
+        )
+        self.assertEqual(
+            [b.inicio for b in leer_csv(ruta)],
+            [ny("2025-01-10 16:30"), ny("2025-01-10 16:45"), ny("2025-01-12 17:00"), ny("2025-01-12 17:15")],
+        )
+
     def test_avisa_si_las_barras_son_de_mas_de_15_minutos(self):
         ruta = self._archivo(
             "timestamp,open,high,low,close\n"

@@ -94,6 +94,14 @@ class Laboratorio(unittest.TestCase):
         self.assertEqual(laboratorio.veredicto(base, ({"n": 80, "media": 0.0}, {"n": 40, "media": 0.0})), "no mejora")
         self.assertEqual(laboratorio.veredicto(base, ({"n": 10, "media": 1.0}, {"n": 40, "media": 1.0})), "pocas operaciones para saberlo")
 
+    def test_una_mejora_pequena_con_mucho_baile_puede_ser_suerte(self):
+        # Con un stop o un TP a 1 a 2 cada operación da -1 o +2: la media baila mucho con pocas operaciones.
+        base = ({"n": 60, "media": 0.0, "varianza": 2.25}, {"n": 30, "media": 0.0, "varianza": 2.25})
+        poco = ({"n": 60, "media": 0.1, "varianza": 2.25}, {"n": 30, "media": 0.1, "varianza": 2.25})
+        mucho = ({"n": 60, "media": 0.8, "varianza": 2.25}, {"n": 30, "media": 0.9, "varianza": 2.25})
+        self.assertEqual(laboratorio.veredicto(base, poco), "mejora en los dos periodos, pero poco: puede ser suerte")
+        self.assertTrue(laboratorio.veredicto(base, mucho).startswith("MEJORA clara"))
+
     def test_compara_todas_las_candidatas(self):
         barras = camino(SUBE_AL_TP)
         corte, base, pruebas = laboratorio.comprobar(barras, SIN_COSTES, SOLO_4H)

@@ -25,6 +25,7 @@ En cada barra, por este orden:
 
 from __future__ import annotations
 
+import heapq
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
@@ -237,6 +238,24 @@ def probar(barras: list[Vela], mercado: Mercado, ajustes: Ajustes | None = None,
     return recorrido.terminar()
 
 
+def probar_cartera(mercados: dict, ajustes: Ajustes | None = None, noticias: dict | None = None) -> dict:
+    """Prueba varios mercados a la vez, barra a barra por orden de hora, con el tope de pérdida del día sumando
+    lo de todos, como el bot de MT5 en directo. «mercados» es {nombre: (barras, Mercado)} y «noticias»,
+    {nombre: {fecha: [noticias]}}. Devuelve {nombre: Resultado}."""
+    comun: defaultdict = defaultdict(float)  # el resultado de cada día, entre todos los mercados
+    recorridos = {}
+    for nombre, (_, mercado) in mercados.items():
+        recorridos[nombre] = _Recorrido(mercado, ajustes or Ajustes(), (noticias or {}).get(nombre, {}))
+        recorridos[nombre].r_por_dia = comun
+    def flujo(i: int, nombre: str, barras: list):
+        return ((b.inicio, i, nombre, b) for b in barras)
+
+    flujos = [flujo(i, nombre, barras) for i, (nombre, (barras, _)) in enumerate(mercados.items())]
+    for _, _, nombre, barra in heapq.merge(*flujos, key=lambda x: (x[0], x[1])):
+        recorridos[nombre].paso(barra)
+    return {nombre: r.terminar() for nombre, r in recorridos.items()}
+
+
 class _Recorrido:
     def __init__(self, mercado: Mercado, ajustes: Ajustes, noticias: dict):
         self.mercado, self.ajustes, self.noticias = mercado, ajustes, noticias
@@ -426,7 +445,7 @@ class _Recorrido:
         dia = dia_de_trading(hora - QUINCE_MIN)
         if a.escenarios is not None and setup.escenario not in a.escenarios:
             return ESCENARIO_NO_PERMITIDO
-        if a.vela1_minima is not None and (setup.vela1_rel is None or setup.vela1_rel < a.vela1_minima):
+        if a.vela1_minima and (setup.vela1_rel is None or setup.vela1_rel < a.vela1_minima):  # 0 o None: apagada, como en MT5
             return VELA1_PEQUENA
         if a.sin_noticias and self.noticias.get(hora.date()):
             return NOTICIAS
@@ -446,7 +465,7 @@ class _Recorrido:
             return AL_OTRO_LADO
         if self.pausa_hasta is not None and dia <= self.pausa_hasta:
             return PAUSA
-        if a.perdida_max_dia_r is not None and self.r_por_dia.get(dia, 0.0) <= -a.perdida_max_dia_r:
+        if a.perdida_max_dia_r and self.r_por_dia.get(dia, 0.0) <= -a.perdida_max_dia_r:  # 0 o None: sin tope, como en MT5
             return TOPE_DE_PERDIDA
         if self.por_dia[dia] >= a.max_operaciones_dia:
             return TOPE_DEL_DIA

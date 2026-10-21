@@ -11,11 +11,13 @@ Bot de trading con la estrategia CRT («Candle Range Theory») para el NASDAQ, e
   en demo.
 - **El cuaderno del equipo** (`cuaderno/`): vuestras operaciones y cómo estabais, para la parte de psicología.
 
-**Estado (20-10-2026):**
+**Estado (21-10-2026):**
 - Las reglas, la memoria, el laboratorio, el examen y el cuaderno están programados y comprobados con pruebas
   automáticas. Ya tienen lo de los veintitrés vídeos: 13 banderas rojas, 37 reglas candidatas, 60 situaciones en el
   examen y la disciplina de los vídeos de psicología y de cuentas.
-- **Falta la prueba con datos reales del pasado**, porque faltan los datos (ver «Datos»).
+- **Primera prueba con datos reales del pasado (21-10-2026):** de 2012 a mayo de 2020, con precios de 1 minuto de
+  OANDA (ver «Datos»). Con las reglas de hoy **pierde** en los cuatro mercados juntos. Los resultados y lo que dice el
+  laboratorio están en `ESTRATEGIA.md`, «Prueba con datos reales». No se usa con dinero real hasta que eso cambie.
 - El bot de MT5 está escrito, pero no se ha podido compilar aquí: hay que compilarlo en MetaEditor (ver `mt5/LEEME.md`).
 - **Para empezar en demo:** `mt5/LEEME.md`, sección 0 (paso a paso y la rutina de cada semana).
 - No opera con dinero real.
@@ -48,6 +50,7 @@ Solo hace falta Python 3.9 o más nuevo, sin instalar nada:
 python3 probar.py datos/NAS100_M1.csv --mercado nasdaq
 python3 aprender.py datos/NAS100_M1.csv --mercado nasdaq --noticias datos/noticias.csv
 python3 examen.py datos/NAS100_M1.csv --mercado nasdaq
+python3 cartera.py datos/EURUSD_M1.csv:eurusd datos/GBPUSD_M1.csv:gbpusd datos/NAS100_M1.csv:nasdaq datos/XAUUSD_M1.csv:oro
 python3 aprender.py --memoria-mt5 datos/memoria_NAS100.csv
 python3 cuaderno.py
 ```
@@ -62,6 +65,8 @@ python3 cuaderno.py
 - `examen.py`: el examen con `casos/casos.csv`. Los datos tienen que empezar unos meses antes de los casos. Con
   `--modelo-del-backtest` se examina con el modelo del backtest del autor (sin sesgo ni diario), que es el de los casos
   «vbacktest-…».
+- `cartera.py`: los mercados a la vez, como el bot de MT5 puesto en todos los gráficos. El tope de pérdida del día suma
+  lo de todos. Saca la peor caída de la cuenta, el peor día y las veces que el euro y la libra van a la vez.
 - `aprender.py --memoria-mt5`: el informe de lo que ha apuntado el bot de MT5 en directo.
 - `cuaderno.py`: el informe de vuestro cuaderno de operaciones (`cuaderno/LEEME.md` explica cómo apuntarlas).
 - Mercados: `nasdaq`, `eurusd`, `gbpusd` y `oro`.
@@ -80,7 +85,11 @@ Hacen falta barras de 1 o de 15 minutos de varios años de cada mercado:
    - Ojo: muchos brókeres solo dan unos meses de barras de 1 minuto.
 2. **Dukascopy:** da años de datos de 1 minuto gratis. Desde la sesión de Claude en la nube está bloqueado
    (`datafeed.dukascopy.com`); se puede permitir en los ajustes de red del entorno.
-3. **Noticias:** el bot de MT5 las exporta desde su calendario económico con el parámetro `ExportarNoticias`
+3. **OANDA, de 2012 a mayo de 2020 (lo que se ha usado en la primera prueba):** precios de 1 minuto en UTC del
+   repositorio público de GitHub `FutureSharks/financial-data` (`pyfinancialdata/data/currencies/oanda/`: EUR_USD,
+   GBP_USD, NAS100_USD y XAU_USD). Se juntan en barras de 15 minutos y se leen con `--formato utc`. Son precios de OANDA,
+   no los de vuestro bróker, y terminan en 2020: no sirven para los casos del examen, que son de 2025 y 2026.
+4. **Noticias:** el bot de MT5 las exporta desde su calendario económico con el parámetro `ExportarNoticias`
    (`noticias.csv`).
 
 Los datos y los resultados no se suben a git (`datos/` y `resultados/` están en `.gitignore`).
@@ -96,7 +105,7 @@ python3 -m unittest
 | Ruta | Qué hay |
 |---|---|
 | `ESTRATEGIA.md` | Las reglas exactas, lo decidido, lo provisional y cómo aprende. |
-| `probar.py`, `aprender.py`, `examen.py`, `cuaderno.py` | Las órdenes. |
+| `probar.py`, `aprender.py`, `examen.py`, `cartera.py`, `cuaderno.py` | Las órdenes. |
 | `casos/casos.csv` | Las situaciones del examen: las de los vídeos y las que le enseñéis. |
 | `cuaderno/` | Vuestro cuaderno de operaciones (`operaciones.csv`) y cómo rellenarlo. |
 | `crt/velas.py` | Lee el CSV (MT5 o UTC) y monta las velas de 1H, 3H, 4H, diario, semanal y mensual en hora de Nueva York. |

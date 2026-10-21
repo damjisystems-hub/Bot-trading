@@ -2,8 +2,9 @@ import unittest
 from dataclasses import replace
 from datetime import date
 
-from crt.marcos import Marco
-from crt.motor import Ajustes, Operacion, _revisar_salida, probar, sesgo_de_fondo
+from crt.marcos import Marco, Setup
+from crt.mercados import Mercado
+from crt.motor import Ajustes, Operacion, _cabe, _niveles, _revisar_salida, probar, probar_cartera, sesgo_de_fondo
 from crt.rangos import Evento
 from crt.velas import Vela
 from tests.ayuda import SIN_COSTES, camino, espejo, ny
@@ -100,6 +101,21 @@ class DiarioAFavor(unittest.TestCase):
     def test_sin_esa_comprobacion_entra(self):
         res = probar(camino(self.PUNTOS), SIN_COSTES, Ajustes(sesgo_fijo=+1, comprobar_objetivo_diario=False))
         self.assertEqual([(o.hora_entrada, o.resultado) for o in res.operaciones], [(ny("2025-03-04 09:30"), "TP")])
+
+    def test_un_rango_viejo_de_4h_no_tapa_el_verde_anticipado_del_diario(self):
+        # El martes, el 4H de las 5 forma un rango alcista (barrido 97) ANTES de que el diario barra el 95 del
+        # lunes. La vela de 4H de las 9 baja a 94 y el 1H forma otro rango alcista: el 4H se está formando otra
+        # vez al alza después del barrido del diario, y eso pone el diario en verde (antes salía ámbar).
+        lunes = [("2025-03-02 18:00", 105), ("2025-03-03 03:00", 115), ("2025-03-03 10:00", 95), ("2025-03-03 17:00", 104)]
+        martes = [
+            ("2025-03-03 21:00", 104), ("2025-03-04 01:00", 106), ("2025-03-04 02:00", 110), ("2025-03-04 04:00", 100),
+            ("2025-03-04 05:00", 105), ("2025-03-04 06:00", 103), ("2025-03-04 07:00", 101), ("2025-03-04 08:00", 97),
+            ("2025-03-04 09:00", 103), ("2025-03-04 10:00", 96), ("2025-03-04 10:30", 94), ("2025-03-04 11:00", 98),
+            ("2025-03-04 11:15", 97.6), ("2025-03-04 11:30", 99), ("2025-03-04 12:30", 108),
+        ]  # fmt: skip
+        res = probar(camino(lunes + martes), SIN_COSTES, Ajustes(sesgo_fijo=+1, comprobar_objetivo_diario=False))
+        senales = {s.hora: (s.decision, s.diario) for s in res.senales}
+        self.assertEqual(senales[ny("2025-03-04 11:30")], ("entrada", "verde"))
 
 
 class EsperaTrasLaApertura(unittest.TestCase):
@@ -356,6 +372,28 @@ class LoteDeTreceVideos(unittest.TestCase):
         self.assertEqual(probar(camino(SUBE), SIN_COSTES, ajustes).operaciones[0].tp, 118)  # el de 110 queda antes
 
 
+class NivelesConCostes(unittest.TestCase):
+    # Con diferencial 0,5 y colchón 1: se compra al precio de compra y las ventas se cierran comprando, así que
+    # la compra y la venta espejo arriesgan lo mismo.
+    MERCADO = Mercado("prueba", diferencial=0.5, colchon=1.0, decimales=1)
+
+    def test_compra_y_venta_espejo_arriesgan_lo_mismo(self):
+        compra = Setup(("c",), +1, barrido=97, objetivo=130, i_inicio=0, via="cierre", escenario="otro")
+        venta = Setup(("v",), -1, barrido=103, objetivo=70, i_inicio=0, via="cierre", escenario="otro")
+        self.assertEqual(_niveles(+1, 104, compra, self.MERCADO, 2.0), (104.5, 96.0, 8.5, 121.5))
+        self.assertEqual(_niveles(-1, 96, venta, self.MERCADO, 2.0), (96, 104.5, 8.5, 79.0))
+
+    def test_stop_demasiado_corto_y_precio_pasado_del_barrido(self):
+        caro = Mercado("prueba", diferencial=1.0, colchon=0.5, decimales=1)
+        compra = Setup(("c",), +1, barrido=103, objetivo=130, i_inicio=0, via="cierre", escenario="otro")
+        self.assertEqual(_niveles(+1, 104, compra, caro, 2.0), "stop demasiado corto")  # 105 − 102,5 = 2,5 < 3 diferenciales
+        self.assertEqual(_niveles(+1, 103, compra, caro, 2.0), "el precio ya pasó el barrido")
+
+    def test_en_ventas_el_objetivo_se_compara_con_el_precio_de_compra(self):
+        self.assertTrue(_cabe(-1, 79.0, 78.5, self.MERCADO))  # 79 ≥ 78,5 + 0,5
+        self.assertFalse(_cabe(-1, 78.9, 78.5, self.MERCADO))
+
+
 class TpEnElObjetivoDe4H(unittest.TestCase):
     def test_el_tp_va_al_objetivo_del_rango(self):
         # La vela 1 sube hasta 120: el objetivo del rango de 4H está a 16 puntos de la entrada (2,3 R).
@@ -449,6 +487,30 @@ class SesgoDeFondo(unittest.TestCase):
         self.assertEqual(sesgo_de_fondo(self._marco(ruptura_alcista), self._marco(rango_bajista)), 0)  # se contradicen
         rango_bajista.estado = "completado"
         self.assertEqual(sesgo_de_fondo(self._marco(None), self._marco(rango_bajista)), 0)
+
+
+class Cartera(unittest.TestCase):
+    # «a» compra a las 9:30 y toca el stop a las 9:45; «b» compra a las 10:30 y llega al TP.
+    PIERDE = HASTA_LAS_9 + ORDER_BLOCK_9_30 + [("2025-03-04 09:45", 96), ("2025-03-04 13:00", 96)]
+    GANA_TARDE = HASTA_LAS_9 + [("2025-03-04 10:15", 102.5), ("2025-03-04 10:30", 104), ("2025-03-04 12:00", 125), ("2025-03-04 13:00", 125)]
+
+    def _juntos(self, ajustes):
+        return probar_cartera({"a": (camino(self.PIERDE), SIN_COSTES), "b": (camino(self.GANA_TARDE), SIN_COSTES)}, ajustes)
+
+    def test_sin_llegar_al_tope_cada_mercado_sale_igual_que_solo(self):
+        solo = probar(camino(self.GANA_TARDE), SIN_COSTES, SOLO_4H)
+        juntos = self._juntos(SOLO_4H)
+        self.assertEqual([(o.hora_entrada, o.resultado) for o in juntos["b"].operaciones], [(ny("2025-03-04 10:30"), "TP")])
+        self.assertEqual([(o.hora_entrada, o.resultado) for o in solo.operaciones], [(ny("2025-03-04 10:30"), "TP")])
+        self.assertEqual([o.resultado for o in juntos["a"].operaciones], ["SL"])
+
+    def test_el_tope_del_dia_suma_lo_de_todos_los_mercados(self):
+        juntos = self._juntos(replace(SOLO_4H, perdida_max_dia_r=1.0))
+        self.assertEqual(juntos["b"].operaciones, [])
+        self.assertEqual(juntos["b"].descartadas["tope de pérdida del día"], 1)
+
+    def test_tope_cero_es_sin_tope_como_en_mt5(self):
+        self.assertEqual(len(probar(camino(self.GANA_TARDE), SIN_COSTES, replace(SOLO_4H, perdida_max_dia_r=0.0)).operaciones), 1)
 
 
 if __name__ == "__main__":
