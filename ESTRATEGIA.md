@@ -32,6 +32,44 @@ Si cambia una regla, se cambia aquí, en el código y en su prueba automática.
 - **Las fechas de los casos del examen** que no la tienen, y confirmar las deducidas (ver `casos/casos.csv`).
 - **El riesgo y el tope del día en las cuentas de futuros**, antes de llegar a esa fase (ver «Disciplina»).
 - **Cuándo se pasa de la demo a la cuenta propia** (el autor recomienda al menos 3 meses, unas 60 sesiones).
+- **Qué hacer con el resultado de la prueba con datos reales** (abajo): con las reglas de hoy, pierde.
+
+## Prueba con datos reales (21-10-2026)
+
+Primera prueba con precios de verdad: de enero de 2012 a mayo de 2020, con barras de 1 minuto de OANDA (ver
+`README.md`, «Datos»). Los costes son los supuestos de `crt/mercados.py`. Son precios de OANDA, no los de vuestro
+bróker, y no llegan a 2025: el examen con las situaciones de los vídeos no se ha podido hacer.
+
+| Mercado | Operaciones | Acierto | Resultado | Media por operación |
+|---|---|---|---|---|
+| EUR/USD | 117 | 35 % | −2,8 R | −0,02 R |
+| GBP/USD | 111 | 32 % | −8,9 R | −0,08 R |
+| NASDAQ | 99 | 25 % | −24,9 R | −0,25 R |
+| Oro | 122 | 30 % | −20,8 R | −0,17 R |
+| **Los cuatro juntos** (`cartera.py`) | **449** | **31 %** | **−57,4 R** | **−0,13 R** |
+
+- **Pierde.** A 1 a 2 hay que acertar más del 33 % y acierta el 31 %. La peor caída de los cuatro juntos fue de
+  −62 R: con el 1 % por operación, un −62 % de la cuenta.
+- **No es por los costes:** sin diferencial seguiría perdiendo (unos −28 R). El diferencial cuesta de 0,04 a 0,08 R por
+  operación.
+- **El laboratorio no encuentra arreglo:** ninguna de las 35 ideas probadas mejora claramente en los dos periodos (antes
+  y después de julio de 2017). Las que mejoran un poco lo hacen en un solo mercado, que es lo que se espera de la suerte.
+- **Las banderas rojas sí avisan:** las operaciones con dos o más (nota C) son tres de cada cuatro y suman −55 R en 329
+  operaciones; las de nota A o B, −2 R en 120. Con «como mucho una bandera roja» se queda en tablas, pero no gana, y
+  quedan pocas operaciones para saber si es de verdad o suerte. Esta idea sale de mirar estos mismos datos: hay que
+  confirmarla con otros.
+- **El NASDAQ pierde sobre todo en Londres** (89 de sus 99 operaciones, −24 R). El autor lo opera en la apertura, pero
+  en esa franja salen muy pocas operaciones (10) para saber nada.
+- El euro y la libra coincidieron abiertos hacia el mismo lado solo 7 veces.
+
+**Lo que se puede hacer (lo decide el equipo):**
+
+1. Probar con vuestro bróker de 2020 a hoy (exportando de MT5), que son otros datos y años más recientes. Si con
+   «como mucho una bandera roja» u otra idea se confirma una mejora clara, se propone.
+2. Seguir en demo solo para medir, sin esperar que gane, y revisar las reglas con lo que salga. Con dinero real no tiene
+   sentido mientras pierda en el pasado.
+3. Revisar con el autor o con vuestra experiencia en qué se diferencia el bot de lo que hace él a ojo (ver «Lo que el
+   bot no copia»): puede que la ventaja esté justo ahí.
 
 ## Horario
 
@@ -272,10 +310,13 @@ reglas candidatas.
   - no entrar con el diario o el 4H tomando a favor: «nunca estar vendiendo tras tomar bajos» (vídeo de la única
     estrategia para 2026);
   - el modelo del backtest del autor, para comparar: sin sesgo ni diario y hasta 3 operaciones al día (su «+80 %» son
-    11 TP de 13 operaciones en una semana de mayo de 2025, elegida después de verla).
+    11 TP de 13 operaciones en una semana de mayo de 2025, elegida después de verla);
+  - como mucho una bandera roja (nota A o B), que sale de la prueba con datos reales del 21-10-2026 y hay que
+    confirmar con otros datos.
 
-  Una candidata solo se propone si mejora la media de R por operación en los dos periodos con al menos 30
-  operaciones en cada uno. «Solo en Londres» y «solo después de la apertura» se miran en cada mercado: el autor opera
+  Una candidata solo se propone si mejora la media de R por operación en los dos periodos, con al menos 30
+  operaciones en cada uno y por más de un «error típico» (lo que baila la media por pura suerte con esas operaciones).
+  Con tantas ideas a prueba, alguna mejoraría en los dos periodos por casualidad: por eso no basta con mejorar. «Solo en Londres» y «solo después de la apertura» se miran en cada mercado: el autor opera
   el forex en Londres y el NASDAQ en la apertura (vídeo «¿Me paso a futuros?»), aunque en otros vídeos compra el NASDAQ
   en Londres.
 - **Examen:** `casos/casos.csv` guarda situaciones reales con lo que el bot tenía que hacer: las de los vídeos (60,

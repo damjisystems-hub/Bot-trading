@@ -129,6 +129,7 @@ class Ajustes:
     exigir_1h: str | None = None  # el 1H tiene que estar "verde" (rango a favor) o "no_rojo" (no en contra)
     exigir_3h: str | None = None  # lo mismo con el 3H
     sin_banderas: bool = False  # solo situaciones sin banderas rojas (nota A)
+    max_banderas: int | None = None  # como mucho tantas banderas rojas (1: nota A o B)
     pausa_tras_stops: int | None = None  # tras tantos stops seguidos, el resto del día y el siguiente sin operar
     tolerancia_diario: float = 0.0  # un rango diario que cierra hasta esta parte de la vela 1 por fuera sigue contando
     sesgo_fijo: int | None = None  # solo para pruebas: +1 compras, -1 ventas
@@ -458,6 +459,8 @@ class _Recorrido:
         if a.exigir_1h and not _acompana(colores["h1"], a.exigir_1h):
             return H1_NO_ACOMPANA
         if a.sin_banderas and banderas:
+            return CON_BANDERAS
+        if a.max_banderas is not None and len(banderas) > a.max_banderas:
             return CON_BANDERAS
         if a.vetar_tomando and any(b in banderas for b in (*B_DIARIO_TOMANDO.values(), *B_4H_TOMANDO.values())):
             return CON_BANDERAS  # «nunca estar vendiendo tras tomar bajos»

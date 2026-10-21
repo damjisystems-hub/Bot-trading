@@ -94,6 +94,7 @@ input bool     TpEnObjetivo4H           = false;        // TP en el objetivo del
 input Exigencia Exigir1H                = EXIGIR_NADA;  // Exigir el 1H
 input Exigencia Exigir3H                = EXIGIR_NADA;  // Exigir el 3H
 input bool     SoloSinBanderas          = false;        // Solo situaciones sin banderas rojas (nota A)
+input int      MaxBanderas              = -1;           // Como mucho tantas banderas rojas (-1 = no; 1 = nota A o B)
 input int      PausaTrasStops           = 0;            // Un día de pausa tras tantos stops seguidos (0 = no)
 input bool     DiarioValeExpansiva      = false;        // Diario: también vale tras una vela diaria expansiva a favor
 input bool     SalidaPeligro            = false;        // Salir en la zona de peligro (máximos nuevos de 4H y 1H y barrido en M15)
@@ -972,13 +973,19 @@ string TextoBanderas(const int banderas)
    return t;
   }
 
-// A: sin banderas rojas; B: con una; C: con dos o más.
-string Nota(const int banderas)
+int NumBanderas(const int banderas)
   {
    int n = 0;
    for(int k = 0; k < NUM_BANDERAS; k++)
       if((banderas & (1 << k)) != 0)
          n++;
+   return n;
+  }
+
+// A: sin banderas rojas; B: con una; C: con dos o más.
+string Nota(const int banderas)
+  {
+   int n = NumBanderas(banderas);
    if(n == 0)
       return "A";
    return (n == 1) ? "B" : "C";
@@ -2156,6 +2163,8 @@ int Filtros(const Setup &s, const datetime hora, const Vela &b, const int c3, co
    if(Exigir1H != EXIGIR_NADA && !Acompana(c1, Exigir1H))
       return DEC_H1;
    if(SoloSinBanderas && banderas != 0)
+      return DEC_BANDERAS;
+   if(MaxBanderas >= 0 && NumBanderas(banderas) > MaxBanderas)
       return DEC_BANDERAS;
    if(VetarTomando && (banderas & (BAN_DIARIO_MAXIMOS | BAN_DIARIO_MINIMOS | BAN_4H_MAXIMOS | BAN_4H_MINIMOS)) != 0)
       return DEC_BANDERAS;   // «nunca estar vendiendo tras tomar bajos»

@@ -160,6 +160,7 @@ Un aviso es así:
 | TpEnObjetivo4H | El TP va al objetivo del rango de 4H y no a 1 a Ratio. Si queda a menos de 1 R, no entra. | No |
 | Exigir1H / Exigir3H | Que el 1H (o el 3H) esté a favor, o que al menos no vaya en contra. | No |
 | SoloSinBanderas | Solo situaciones con nota A. | No |
+| MaxBanderas | Como mucho tantas banderas rojas: 1 = solo notas A y B. -1 = no. Sale de la prueba con datos reales del 21-10-2026; falta confirmarla. | -1 |
 | PausaTrasStops | Tras tantos stops seguidos, el resto del día y el siguiente sin entrar. 0 = no. | 0 |
 | ToleranciaDiario | Un rango diario que cierra un poco por fuera (hasta esa parte de la vela 1) sigue valiendo, como hace el autor en el gráfico de futuros. 0 = no. | 0 |
 | DiarioValeExpansiva | Tras una vela diaria expansiva a favor (cierra por fuera de la anterior) también vale, con el objetivo en su máximo (en ventas, su mínimo). | No |

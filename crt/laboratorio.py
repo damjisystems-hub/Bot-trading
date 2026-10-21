@@ -59,6 +59,9 @@ CANDIDATAS = (
     ("El TP tiene que caber antes del objetivo del 4H", {"comprobar_objetivo_4h": True}),
     ("No entrar con el diario o el 4H tomando a favor («nunca vender tras tomar bajos»)", {"vetar_tomando": True}),
     ("Sin sesgo ni diario, hasta 3 al día (el modelo del backtest del autor)", {"ignorar_sesgo": True, "diario": "ignorar", "max_operaciones_dia": 3}),
+    # De la primera prueba con datos reales (21-10-2026): las de nota C perdían mucho más. Como sale de mirar esos
+    # mismos datos, hay que confirmarla con otros (los del bróker, de 2020 en adelante).
+    ("Como mucho una bandera roja (nota A o B)", {"max_banderas": 1}),
 )
 NECESITAN_NOTICIAS = ("sin_noticias", "antes_de_noticias")
 

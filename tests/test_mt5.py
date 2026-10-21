@@ -54,6 +54,7 @@ PARAMETROS = {
     "exigir_1h": "Exigir1H",
     "exigir_3h": "Exigir3H",
     "sin_banderas": "SoloSinBanderas",
+    "max_banderas": "MaxBanderas",
     "pausa_tras_stops": "PausaTrasStops",
     "tolerancia_diario": "ToleranciaDiario",
     "sesgo_fijo": (),
