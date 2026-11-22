@@ -29,9 +29,12 @@ class S:
 
 class Espejo:
     def __init__(self, dif, col, ratio=2.0, espera=45, desdeM=60, hastaM=780, maxOps=2, topeR=3.0, inicio4h=17,
-                 comprobar=True, sin1h=False, sinVeto=False, backtest=False):
+                 comprobar=True, sin1h=False, sinVeto=False, backtest=False, autor=False):
         self.__dict__.update(locals()); del self.__dict__["self"]
-        if backtest: self.maxOps = 3
+        if backtest and not autor: self.maxOps = 3
+        # order block del autor
+        self.ultimaVerde = self.ultimaRoja = None
+        self.gastadoAlc = self.gastadoBaj = self.obAlc = self.obBaj = False
         self.cont = 0
         self.h1, self.h3, self.h4, self.d1 = Marco("H1", 1), Marco("H3", 2), Marco("H4", 3), Marco("D1", 4)
         self.wU = self.mU = None
@@ -206,6 +209,10 @@ class Espejo:
             if precio >= s.barrido: return False, "el precio ya pasó el barrido", None, None, None, None
             entrada = precio; stop = s.barrido + self.col + self.dif; riesgo = stop - entrada
         if riesgo <= 0 or riesgo < 3 * self.dif: return False, "stop demasiado corto", entrada, stop, riesgo, None
+        if self.autor:
+            objetivoRango = s.objetivo if d > 0 else s.objetivo + self.dif
+            if (objetivoRango - entrada) * d < riesgo: return False, "el objetivo del 4H está a menos de 1 R", entrada, stop, riesgo, None
+            return True, "", entrada, stop, riesgo, objetivoRango
         return True, "", entrada, stop, riesgo, entrada + d * self.ratio * riesgo
     def cabe(self, d, tp, obj):
         if obj is None: return True
@@ -217,25 +224,45 @@ class Espejo:
     def mirar(self, b, a, d, dia, mc, tc):
         horario = self.desdeM < mc <= self.hastaM and not (self.espera > 0 and 570 < mc < 570 + self.espera)
         cA, cB = abs(a.c - a.o), abs(b.c - b.o)
-        ob = cB > cA and ((a.c < a.o and b.c > b.o and b.c > a.o) if d > 0 else (a.c > a.o and b.c < b.o and b.c < a.o))
+        if self.autor:
+            ob = self.obAlc if d > 0 else self.obBaj
+        else:
+            ob = cB > cA and ((a.c < a.o and b.c > b.o and b.c > a.o) if d > 0 else (a.c > a.o and b.c < b.o and b.c < a.o))
         if not (horario and ob): return
         precio = b.c
         usada = lambda i: i != 0 and i in self.usados
         s = self.setup4h(d, precio)
         if s is not None and s.via == "cierre" and (usada(s.idea1) or usada(s.idea2)):
             s = self.anticipo4h(d, precio)
+        if s is None and self.autor:
+            u4 = self.h4.ultimo
+            if u4 is not None and u4.rango and u4.dir == -d and u4.estado == 1:
+                s = self.cerrado(self.h1, d)
         if s is None or not (b.iFin > s.iInicio) or usada(s.idea1) or usada(s.idea2): return
         sd = self.setupD1(d, precio)
         objetivo = sd.objetivo if (sd is not None and not self.backtest) else None
         diarioVale = self.backtest or sd is not None
+        objetivoVale = True
+        if self.autor:
+            objetivo = None
+            if sd is not None:
+                objetivo = sd.objetivo
+            else:
+                objetivoVale = False
+                w = self.wU
+                if w is not None and w.rango and w.estado == 0 and w.dir == d and self.semaforo(self.d1.ultimo, d) != "rojo":
+                    objetivo, objetivoVale = w.objetivo, True
         nOk, motivoN, entrada, stop, riesgo, tp = self.niveles(d, precio, s)
-        if not self.backtest and self.sesgoBot() != d: dec = "sin sesgo a favor"
-        elif not diarioVale: dec = "el diario no está a favor"
+        c1 = self.colorSimple(self.h1, d)
+        if self.autor and not objetivoVale: dec = "sin objetivo a favor en el diario ni en el semanal"
+        elif not self.autor and not self.backtest and self.sesgoBot() != d: dec = "sin sesgo a favor"
+        elif not self.autor and not diarioVale: dec = "el diario no está a favor"
         elif self.op is not None: dec = "ya había una operación abierta"
         else:
             self.usados.append(s.idea1)
             if s.idea2 != 0: self.usados.append(s.idea2)
-            if self.topeR > 0 and self.rDia.get(dia, 0) <= -self.topeR: dec = "tope de pérdida del día"
+            if self.autor and c1 != "verde": dec = "el 1H no acompaña"
+            elif self.topeR > 0 and self.rDia.get(dia, 0) <= -self.topeR: dec = "tope de pérdida del día"
             elif self.opsDia.get(dia, 0) >= self.maxOps: dec = "tope de operaciones del día"
             elif not nOk: dec = motivoN
             elif self.comprobar and not self.cabe(d, tp, objetivo): dec = "el TP no cabe antes del objetivo del diario"
@@ -285,7 +312,14 @@ class Espejo:
         if finSemana and self.op is not None:
             self.salir(b.c if self.op["dir"] > 0 else b.c + self.dif, "Cierre semanal", dia, tc)
         mc = tc.hour * 60 + tc.minute
+        self.obAlc = b.c > b.o and not self.gastadoAlc and self.ultimaRoja is not None and b.c > self.ultimaRoja.h
+        self.obBaj = b.c < b.o and not self.gastadoBaj and self.ultimaVerde is not None and b.c < self.ultimaVerde.l
+        self.gastadoAlc = self.gastadoAlc or self.obAlc
+        self.gastadoBaj = self.gastadoBaj or self.obBaj
         if self.anterior is not None and not finSemana:
             self.mirar(b, self.anterior, 1, dia, mc, tc)
             self.mirar(b, self.anterior, -1, dia, mc, tc)
-        self.anterior = b; self.kWPrev = kW; self.diaPrev = dia; self.cierrePrev = b.c
+        self.anterior = b
+        if b.c > b.o: self.ultimaVerde, self.gastadoBaj = b, False
+        elif b.c < b.o: self.ultimaRoja, self.gastadoAlc = b, False
+        self.kWPrev = kW; self.diaPrev = dia; self.cierrePrev = b.c

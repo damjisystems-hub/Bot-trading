@@ -17,6 +17,16 @@ def es_order_block(anterior, actual, direccion: int) -> bool:
     return anterior.verde and actual.roja and actual.cierre < anterior.apertura
 
 
+def es_order_block_del_autor(ultima_contraria, actual, direccion: int) -> bool:
+    """Order block como lo define el autor en el vídeo de los fundamentos: «la última vela contraria al movimiento;
+    cuando esta vela cierra por encima de la última vela bajista, en concreto por encima de su máximo, se forma el
+    order block». En compras, cierre por encima del máximo de la última vela roja (sea la anterior o no); en ventas,
+    por debajo del mínimo de la última vela verde."""
+    if ultima_contraria is None:
+        return False
+    return actual.cierre > ultima_contraria.maximo if direccion > 0 else actual.cierre < ultima_contraria.minimo
+
+
 def fin_de_la_espera(espera_min: int) -> time:
     return (datetime.combine(date(2000, 1, 1), APERTURA_NY) + timedelta(minutes=espera_min)).time()
 

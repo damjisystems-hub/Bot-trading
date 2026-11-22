@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime, time
 
-from .motor import Ajustes, Operacion, Resultado, probar
+from .motor import MODO_AUTOR, Ajustes, Operacion, Resultado, probar
 
 MINIMO_OPERACIONES = 30
 
@@ -66,6 +66,11 @@ CANDIDATAS = (
     ("4H anticipado sin esperar al 1H (barrido, vuelta dentro y order block)", {"anticipo_sin_1h": True}),
     ("Sesgo: manda el semanal aunque el mensual vaya en contra", {"sin_veto_mensual": True}),
     ("Las dos del autor juntas (4H sin esperar al 1H y sin el veto del mensual)", {"anticipo_sin_1h": True, "sin_veto_mensual": True}),
+    # Del vídeo de los fundamentos (22-11-2026):
+    ("Order block del autor: cierre por encima del máximo de la última vela contraria", {"order_block_del_autor": True}),
+    ("Objetivo en el diario o el semanal en vez del sesgo de fondo", {"objetivo_mayor": True}),
+    ("4H: también vale el rango contrario completado (se opera el de 1H)", {"h4_opuesto_completado": True}),
+    ("El método del vídeo de los fundamentos, entero (modo autor)", MODO_AUTOR),
 )
 NECESITAN_NOTICIAS = ("sin_noticias", "antes_de_noticias")
 

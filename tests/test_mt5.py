@@ -65,6 +65,9 @@ PARAMETROS = {
     "tolerancia_diario": "ToleranciaDiario",
     "anticipo_sin_1h": "Anticipo4HSinEsperar1H",
     "sin_veto_mensual": "SesgoSinVetoMensual",
+    "order_block_del_autor": "OrderBlockDelAutor",
+    "objetivo_mayor": "ObjetivoMayor",
+    "h4_opuesto_completado": "H4OpuestoCompletado",
     "vetos": ("UsarReglasAprendidas",),
     "sesgo_fijo": (),
 }

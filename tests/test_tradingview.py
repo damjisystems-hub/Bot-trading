@@ -125,7 +125,12 @@ class DecideIgualQueElBot(unittest.TestCase):
 
         mercado = Mercado("AZAR", diferencial=0.02, colchon=0.03, decimales=2)
         barras = self._camino(7)
-        for ajustes, extra in ((motor.Ajustes(), {}), (motor.Ajustes(anticipo_sin_1h=True, sin_veto_mensual=True), {"sin1h": True, "sinVeto": True})):
+        casos = (
+            (motor.Ajustes(), {}),
+            (motor.Ajustes(anticipo_sin_1h=True, sin_veto_mensual=True), {"sin1h": True, "sinVeto": True}),
+            (motor.Ajustes(**motor.MODO_AUTOR), {"autor": True}),  # el modo autor del indicador (vídeo de los fundamentos)
+        )
+        for ajustes, extra in casos:
             with self.subTest(ajustes=extra):
                 bot = motor.probar(barras, mercado, ajustes)
                 espejo = Espejo(mercado.diferencial, mercado.colchon, **extra)

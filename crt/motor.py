@@ -30,7 +30,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 
-from .entrada import APERTURA_NY, es_order_block, hora_permitida, sesion
+from .entrada import APERTURA_NY, es_order_block, es_order_block_del_autor, hora_permitida, sesion
 from .marcos import Marco, Setup
 from .mercados import Mercado
 from .rangos import evaluar, semaforo
@@ -62,10 +62,12 @@ LEJOS = "la entrada queda lejos del barrido"
 AL_OTRO_LADO = "al otro lado de la apertura del día"
 ANTES_DE_NOTICIAS = "antes de una noticia fuerte"
 REGLA_APRENDIDA = "regla aprendida"  # una situación que el bot ha aprendido a no tomar (ver crt/autoaprendizaje.py)
+SIN_OBJETIVO = "sin objetivo a favor en el diario ni en el semanal"  # regla candidata del vídeo de los fundamentos
 DECISIONES = (
     ENTRADA, SIN_SESGO, DIARIO_EN_CONTRA, YA_ABIERTA, ESCENARIO_NO_PERMITIDO, VELA1_PEQUENA, NOTICIAS,
     TOPE_DEL_DIA, PASO_EL_BARRIDO, STOP_CORTO, TP_NO_CABE, H3_NO_ACOMPANA, H1_NO_ACOMPANA, CON_BANDERAS,
     OBJETIVO_CERCA, PAUSA, TOPE_DE_PERDIDA, LEJOS, AL_OTRO_LADO, ANTES_DE_NOTICIAS, TP_NO_CABE_4H, REGLA_APRENDIDA,
+    SIN_OBJETIVO,
 )  # fmt: skip
 
 # Cómo termina una operación.
@@ -172,8 +174,19 @@ class Ajustes:
     tolerancia_diario: float = 0.0  # un rango diario que cierra hasta esta parte de la vela 1 por fuera sigue contando
     anticipo_sin_1h: bool = False  # el 4H anticipado no espera a un rango de 1H cerrado: barrido, vuelta dentro y order block
     sin_veto_mensual: bool = False  # sesgo: manda el semanal aunque el mensual vaya en contra
+    # Del vídeo de los fundamentos (22-11-2026). Juntas, con exigir_1h="verde" y tp_objetivo_4h, son el MODO_AUTOR.
+    order_block_del_autor: bool = False  # order block: cierra más allá del extremo de la última vela contraria
+    objetivo_mayor: bool = False  # dirección: un rango pendiente a favor en el diario o en el semanal, sin el sesgo de fondo
+    h4_opuesto_completado: bool = False  # sin rango de 4H a favor, vale que se haya completado el contrario: se opera el de 1H
     vetos: tuple = ()  # reglas aprendidas: situaciones en las que no se entra, como ("vela_4h", "vela de las 5")
     sesgo_fijo: int | None = None  # solo para pruebas: +1 compras, -1 ventas
+
+
+# El método tal como lo explica el autor en el vídeo de los fundamentos (22-11-2026): un objetivo pendiente en el
+# diario o el semanal; el 4H (o el rango contrario ya completado) y el 1H a favor; order block de M15 que cierra por
+# encima del máximo de la última vela bajista; stop detrás del barrido y TP al completar el rango que se opera.
+# Regla candidata, como las demás: apagada hasta que el laboratorio la apruebe y lo decida el equipo.
+MODO_AUTOR = {"order_block_del_autor": True, "objetivo_mayor": True, "h4_opuesto_completado": True, "exigir_1h": "verde", "tp_objetivo_4h": True}
 
 
 @dataclass
@@ -319,6 +332,9 @@ class _Recorrido:
         self.racha = 0  # stops seguidos de las operaciones tomadas
         self.pausa_hasta: date | None = None
         self.anterior: Vela | None = None
+        self.ultima_de_color: dict = {+1: None, -1: None}  # la última barra verde (+1) y la última roja (-1)
+        self.ob_gastado: dict = {+1: False, -1: False}  # ya se formó el order block del autor con la última vela contraria
+        self.ob_autor: dict = {+1: False, -1: False}  # ¿esta barra forma el order block del autor?
 
     def paso(self, barra: Vela) -> None:
         res, anterior = self.res, self.anterior
@@ -359,11 +375,21 @@ class _Recorrido:
         if hora.minute == 0:
             self._foto(hora, barra.cierre)
 
-        # 5.
+        # 5. El order block del autor se forma una sola vez con cada vela contraria: la primera vela a favor que cierra
+        # más allá de su extremo. Para otro, hace falta una vela contraria nueva.
+        for d in (+1, -1):
+            contraria = self.ultima_de_color[-d]
+            a_favor = barra.verde if d > 0 else barra.roja
+            self.ob_autor[d] = a_favor and not self.ob_gastado[d] and es_order_block_del_autor(contraria, barra, d)
+            self.ob_gastado[d] = self.ob_gastado[d] or self.ob_autor[d]
         if anterior is not None and not fin_de_semana:
             for d in (+1, -1):
                 self._mirar(barra, anterior, d)
         self.anterior = barra
+        if barra.verde or barra.roja:
+            color = +1 if barra.verde else -1
+            self.ultima_de_color[color] = barra
+            self.ob_gastado[-color] = False  # una vela contraria nueva: puede formarse otro order block del autor
 
     def terminar(self) -> Resultado:
         res = self.res
@@ -384,7 +410,10 @@ class _Recorrido:
         hora = barra.inicio + QUINCE_MIN  # se entra al cierre de la barra
         if not hora_permitida(hora, a.desde, a.hasta, a.espera_apertura_min, a.solo_tras_apertura, a.solo_londres):
             return
-        if not es_order_block(anterior, barra, d):
+        if a.order_block_del_autor:
+            if not self.ob_autor[d]:
+                return
+        elif not es_order_block(anterior, barra, d):
             return
         precio = barra.cierre
         setup = self.h4.setup(d, precio)
@@ -393,6 +422,12 @@ class _Recorrido:
             # ejemplo, tras barrer el stop), es una idea nueva: «me saca, reacciona, vuelve a hacer un
             # rango de 4H y un order block… y vuelvo a entrar» (vídeo de los stops).
             setup = self.h4.anticipo(d, precio)
+        if setup is None and a.h4_opuesto_completado:
+            # «En vez de un rango de 4H a favor, se completó el rango bajista contrario: el precio ya tenía lo que
+            # necesitaba para subir» (vídeo de los fundamentos). Se opera el rango de 1H a favor.
+            u = self.h4.ultimo
+            if u is not None and u.tipo == "rango" and u.direccion == -d and u.estado == "completado":
+                setup = self.h1.setup(d, precio)
         if setup is None or barra.i_fin <= setup.i_inicio:
             return
         if any(i in self.usados for i in setup.ids):
@@ -415,15 +450,34 @@ class _Recorrido:
             diario_vale = True
         if a.diario == "ignorar":
             objetivo = None
+        objetivo_vale = True
+        if a.objetivo_mayor:
+            # «Lo primero, un objetivo en un marco mayor: un día o una semana… objetivos cerca, no uno mensual a 2.000
+            # puntos» (vídeo de los fundamentos). Vale el rango diario a favor (cerrado o anticipado) o, si no, un rango
+            # semanal pendiente a favor con el diario sin ir en contra.
+            semanal = self.w1.ultimo
+            if diario is not None:
+                objetivo = diario.objetivo
+            elif (
+                semanal is not None and semanal.tipo == "rango" and semanal.estado == "activo" and semanal.direccion == d
+                and semaforo(self.d1.ultimo, d) != "rojo"
+            ):  # fmt: skip
+                objetivo = semanal.objetivo
+            else:
+                objetivo, objetivo_vale = None, False
 
         niveles = _niveles(d, precio, setup, self.mercado, a.ratio, a.tp_objetivo_4h, a.tp_hasta_objetivo_4h)
         colores = {"h3": self.h3.color(d, precio), "h1": self.h1.color(d, precio)}
         banderas = self._banderas(d, hora, precio, colores, niveles)
         atributos = self._atributos(hora, d, color_diario, diario, setup, colores, banderas)
-        if not a.ignorar_sesgo and self._sesgo() != d:
-            decision = SIN_SESGO
-        elif not diario_vale:
-            decision = DIARIO_EN_CONTRA
+        if a.objetivo_mayor:
+            contexto = None if objetivo_vale else SIN_OBJETIVO
+        elif not a.ignorar_sesgo and self._sesgo() != d:
+            contexto = SIN_SESGO
+        else:
+            contexto = None if diario_vale else DIARIO_EN_CONTRA
+        if contexto is not None:
+            decision = contexto
         elif self.abierta is not None:
             decision = YA_ABIERTA
         elif a.no_perseguir and B_LEJOS_DEL_BARRIDO in banderas:

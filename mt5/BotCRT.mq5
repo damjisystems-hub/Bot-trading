@@ -31,7 +31,7 @@
 //
 // Si cambias una regla aquí, cámbiala también en crt/ (y al revés): los dos tienen que decidir igual.
 #property copyright   "Damji Systems"
-#property version     "1.18"
+#property version     "1.19"
 #property description "Bot CRT: avisa de las entradas de la estrategia CRT y apunta la memoria."
 #property description "Por defecto solo avisa. No opera en cuentas reales."
 
@@ -115,6 +115,9 @@ input bool     VetarTomando             = false;        // No entrar con el diar
 input bool     IgnorarSesgo             = false;        // Sin sesgo de fondo (con IgnorarDiario: el modelo del backtest del autor)
 input bool     Anticipo4HSinEsperar1H   = false;        // 4H anticipado sin esperar a un rango de 1H cerrado (barrido, vuelta dentro y order block)
 input bool     SesgoSinVetoMensual      = false;        // Sesgo: manda el semanal aunque el mensual vaya en contra
+input bool     OrderBlockDelAutor       = false;        // Order block del autor: cierre más allá del extremo de la última vela contraria
+input bool     ObjetivoMayor            = false;        // Dirección: un rango pendiente a favor en el diario o el semanal (sin el sesgo de fondo)
+input bool     H4OpuestoCompletado      = false;        // 4H: también vale el rango contrario completado (se opera el de 1H)
 input bool     IgnorarDiario            = false;        // Sin mirar el diario (solo para pruebas)
 
 input group "Autoaprendizaje"
@@ -192,6 +195,7 @@ input long     NumeroMagico             = 20261020;     // Número de las órden
 #define DEC_ANTES_NOTICIAS 19
 #define DEC_NO_CABE_4H   20
 #define DEC_APRENDIDA    21
+#define DEC_SIN_OBJETIVO 22
 
 #define RES_NINGUNO       0
 #define RES_TP            1
@@ -796,6 +800,14 @@ CTrade    g_trade;
 
 Vela      g_anterior;
 bool      g_hay_anterior = false;
+Vela      g_ultima_verde;            // la última barra verde y la última roja (order block del autor)
+Vela      g_ultima_roja;
+bool      g_hay_verde = false;
+bool      g_hay_roja = false;
+bool      g_ob_gastado_alc = false;  // ya se formó el order block del autor con la última vela contraria
+bool      g_ob_gastado_baj = false;
+bool      g_ob_autor_alc = false;    // ¿esta barra forma el order block del autor?
+bool      g_ob_autor_baj = false;
 int       g_i = 0;                   // número de la próxima barra de M15
 bool      g_hay_real = false;
 Senal     g_real;                    // la operación del bot
@@ -932,6 +944,8 @@ string TextoDecision(const int d)
          return "el TP no cabe antes del objetivo del 4H";
       case DEC_APRENDIDA:
          return "regla aprendida";
+      case DEC_SIN_OBJETIVO:
+         return "sin objetivo a favor en el diario ni en el semanal";
      }
    return "";
   }
@@ -2426,15 +2440,25 @@ void Mirar(const Vela &b, const int d)
    datetime hora = b.inicio + SEG_M15;      // se entra al cierre de la barra
    if(!HoraPermitida(hora))
       return;
-   if(!EsOrderBlock(g_anterior, b, d))
+   bool ob = OrderBlockDelAutor ? (d > 0 ? g_ob_autor_alc : g_ob_autor_baj) : EsOrderBlock(g_anterior, b, d);
+   if(!ob)
       return;
    double precio = b.cierre;
    Setup s;
-   if(!g_h4.DameSetup(d, precio, s))
-      return;
+   bool hay_setup = g_h4.DameSetup(d, precio, s);
    // La idea de 4H ya dio su entrada. Si la vela en curso está formando otro rango a favor (por
    // ejemplo, tras barrer el stop), es una idea nueva: volver a entrar tras un stop.
-   if(s.via == VIA_CIERRE && IdeaEn(g_usadas, s) && !g_h4.DameAnticipo(d, precio, s))
+   if(hay_setup && s.via == VIA_CIERRE && IdeaEn(g_usadas, s))
+      hay_setup = g_h4.DameAnticipo(d, precio, s);
+   // Vídeo de los fundamentos: sin rango de 4H a favor, vale que se haya completado el contrario; se opera el de 1H.
+   if(!hay_setup && H4OpuestoCompletado && g_h4.ultimo >= 0)
+     {
+      Evento u4;
+      g_h4.UltimoEvento(u4);
+      if(u4.tipo == TIPO_RANGO && u4.direccion == -d && u4.estado == EST_COMPLETADO)
+         hay_setup = g_h1.DameSetup(d, precio, s);
+     }
+   if(!hay_setup)
       return;
    if(b.i_fin <= s.i_inicio)
       return;
@@ -2458,6 +2482,29 @@ void Mirar(const Vela &b, const int d)
      }
    if(IgnorarDiario)
       objetivo = VACIO;
+   // Vídeo de los fundamentos: «lo primero, un objetivo en un marco mayor: un día o una semana». Vale el rango
+   // diario a favor (cerrado o anticipado) o, si no, un rango semanal pendiente a favor con el diario sin ir en contra.
+   bool objetivo_vale = true;
+   if(ObjetivoMayor)
+     {
+      if(hay_diario)
+         objetivo = sd.objetivo;
+      else
+        {
+         objetivo = VACIO;
+         objetivo_vale = false;
+         if(g_w1.ultimo >= 0)
+           {
+            Evento w;
+            g_w1.UltimoEvento(w);
+            if(w.tipo == TIPO_RANGO && w.estado == EST_ACTIVO && w.direccion == d && g_d1.SemaforoCerrado(d) != -1)
+              {
+               objetivo = w.objetivo;
+               objetivo_vale = true;
+              }
+           }
+        }
+     }
 
    double entrada = 0, stop = 0, riesgo = 0, tp = 0;
    int motivo_niveles = Niveles(d, precio, s, b.dif, entrada, stop, riesgo, tp);
@@ -2465,37 +2512,43 @@ void Mirar(const Vela &b, const int d)
    int c1 = g_h1.ColorSemaforo(d, precio);
    int banderas = Banderas(d, hora, precio, c3, c1, motivo_niveles == DEC_NINGUNA, riesgo);
 
-   int decision;
-   if(!IgnorarSesgo && SesgoDeFondo() != d)
-      decision = DEC_SIN_SESGO;
+   int contexto = DEC_NINGUNA;
+   if(ObjetivoMayor)
+      contexto = objetivo_vale ? DEC_NINGUNA : DEC_SIN_OBJETIVO;
    else
-      if(!diario_vale)
-         decision = DEC_DIARIO;
+      if(!IgnorarSesgo && SesgoDeFondo() != d)
+         contexto = DEC_SIN_SESGO;
       else
-         if(g_hay_real)
-            decision = DEC_ABIERTA;
+         if(!diario_vale)
+            contexto = DEC_DIARIO;
+   int decision;
+   if(contexto != DEC_NINGUNA)
+      decision = contexto;
+   else
+      if(g_hay_real)
+         decision = DEC_ABIERTA;
+      else
+         if(NoPerseguir && (banderas & BAN_LEJOS) != 0)
+            decision = DEC_LEJOS;         // «nunca entréis persiguiendo el precio»: la idea no se gasta
          else
-            if(NoPerseguir && (banderas & BAN_LEJOS) != 0)
-               decision = DEC_LEJOS;         // «nunca entréis persiguiendo el precio»: la idea no se gasta
-            else
+           {
+            MarcarIdea(g_usadas, s);      // solo cuenta el primer order block de cada idea
+            decision = Filtros(s, hora, b, c3, c1, banderas, d, g_w1.DireccionUltimo() * d, g_mn.DireccionUltimo() * d,
+                               color_diario, hay_diario ? sd.via : VIA_NINGUNA);
+            if(decision == DEC_NINGUNA)
               {
-               MarcarIdea(g_usadas, s);      // solo cuenta el primer order block de cada idea
-               decision = Filtros(s, hora, b, c3, c1, banderas, d, g_w1.DireccionUltimo() * d, g_mn.DireccionUltimo() * d,
-                                  color_diario, hay_diario ? sd.via : VIA_NINGUNA);
-               if(decision == DEC_NINGUNA)
-                 {
-                  if(motivo_niveles != DEC_NINGUNA)
-                     decision = motivo_niveles;
+               if(motivo_niveles != DEC_NINGUNA)
+                  decision = motivo_niveles;
+               else
+                  if(ComprobarObjetivo4H && !Cabe(d, tp, s.objetivo, b.dif))
+                     decision = DEC_NO_CABE_4H;   // «no vamos a querer tomar un trade de ratio uno»
                   else
-                     if(ComprobarObjetivo4H && !Cabe(d, tp, s.objetivo, b.dif))
-                        decision = DEC_NO_CABE_4H;   // «no vamos a querer tomar un trade de ratio uno»
+                     if(ComprobarObjetivoDiario && !Cabe(d, tp, objetivo, b.dif))
+                        decision = DEC_NO_CABE;
                      else
-                        if(ComprobarObjetivoDiario && !Cabe(d, tp, objetivo, b.dif))
-                           decision = DEC_NO_CABE;
-                        else
-                           decision = DEC_ENTRADA;
-                 }
+                        decision = DEC_ENTRADA;
               }
+           }
 
    bool nueva = !IdeaEn(g_vistas, s);
    MarcarIdea(g_vistas, s);
@@ -2641,7 +2694,14 @@ void ProcesarBarra(Vela &b)
       if(fin_del_dia && CierreDiario)
          CerrarTodo(b.cierre, hora, RES_DIA);
 
-   // 5. Al cierre de la barra, para compras y para ventas.
+   // 5. El order block del autor se forma una sola vez con cada vela contraria: la primera vela a favor que cierra
+   //    más allá de su extremo. Después, al cierre de la barra, para compras y para ventas.
+   g_ob_autor_alc = b.cierre > b.apertura && !g_ob_gastado_alc && g_hay_roja && b.cierre > g_ultima_roja.maximo;
+   g_ob_autor_baj = b.cierre < b.apertura && !g_ob_gastado_baj && g_hay_verde && b.cierre < g_ultima_verde.minimo;
+   if(g_ob_autor_alc)
+      g_ob_gastado_alc = true;
+   if(g_ob_autor_baj)
+      g_ob_gastado_baj = true;
    if(g_hay_anterior && !fin_de_semana)
      {
       Mirar(b, 1);
@@ -2649,6 +2709,19 @@ void ProcesarBarra(Vela &b)
      }
    g_anterior = b;
    g_hay_anterior = true;
+   if(b.cierre > b.apertura)
+     {
+      g_ultima_verde = b;
+      g_hay_verde = true;
+      g_ob_gastado_baj = false;   // una vela contraria nueva: puede formarse otro order block de ventas
+     }
+   else
+      if(b.cierre < b.apertura)
+        {
+         g_ultima_roja = b;
+         g_hay_roja = true;
+         g_ob_gastado_alc = false;
+        }
   }
 
 double Diferencial(const MqlRates &r, const bool ahora)
@@ -3010,6 +3083,14 @@ void Reiniciar(void)
    g_mn.Iniciar("MN", MARCO_MN, NULL);
    ZeroMemory(g_anterior);
    g_hay_anterior = false;
+   ZeroMemory(g_ultima_verde);
+   ZeroMemory(g_ultima_roja);
+   g_hay_verde = false;
+   g_hay_roja = false;
+   g_ob_gastado_alc = false;
+   g_ob_gastado_baj = false;
+   g_ob_autor_alc = false;
+   g_ob_autor_baj = false;
    g_i = 0;
    g_hay_real = false;
    ZeroMemory(g_real);

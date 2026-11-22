@@ -14,8 +14,12 @@ strategy("CRT · prueba con el pasado", shorttitle="CRT prueba", overlay=true, p
 
 // ───────────────────────── Ajustes ─────────────────────────
 
-G_REGLAS = "Reglas (las del bot)"
-ratio = input.float(2.0, "TP: veces lo que se arriesga (1 a 2)", minval=0.5, step=0.5, group=G_REGLAS)
+G_MODO = "Modo"
+MODO_AUTOR_TXT = "Como el autor (vídeo de los fundamentos)"
+modo = input.string(MODO_AUTOR_TXT, "Cómo decide", options=[MODO_AUTOR_TXT, "Como el bot (reglas del equipo)"], group=G_MODO, tooltip="Como el autor: objetivo pendiente en el diario o el semanal; el 4H (o el rango contrario ya completado) y el 1H a favor; order block de M15 que cierra por encima del máximo de la última vela bajista; stop detrás del barrido y TP al completar el rango. Como el bot: las reglas decididas por el equipo (sesgo semanal y mensual, diario a favor, order block más fuerte que la vela anterior y TP a 1 a 2).")
+
+G_REGLAS = "Reglas comunes"
+ratio = input.float(2.0, "TP: veces lo que se arriesga (solo como el bot)", minval=0.5, step=0.5, group=G_REGLAS)
 espera = input.int(45, "Minutos sin entrar tras la apertura de las 9:30 (NY)", minval=0, group=G_REGLAS)
 desdeTxt = input.string("01:00", "Entradas desde (hora de Nueva York)", group=G_REGLAS)
 hastaTxt = input.string("13:00", "Entradas hasta (hora de Nueva York)", group=G_REGLAS)
@@ -25,7 +29,7 @@ inicio4h = input.int(17, "Las velas de 4H empiezan a esta hora de NY (17: las de
 comprobarObjDiario = input.bool(true, "No entrar si el TP queda más allá del objetivo del diario", group=G_REGLAS)
 sesgoEquipo = input.string("El que calcula el bot", "Sesgo de esta semana", options=["El que calcula el bot", "Compras", "Ventas", "Ninguno"], group=G_REGLAS, tooltip="Lo que confirmáis o cambiáis cada lunes. Solo vale para la semana en curso: la historia se repasa siempre con el del bot.")
 
-G_CAND = "Reglas candidatas (apagadas: en 20 años no ganan)"
+G_CAND = "Reglas candidatas del bot (apagadas: en 20 años no ganan)"
 anticipoSin1h = input.bool(false, "4H anticipado sin esperar al 1H (barrido, vuelta dentro y order block)", group=G_CAND)
 sinVetoMensual = input.bool(false, "Sesgo: manda el semanal aunque el mensual vaya en contra", group=G_CAND)
 modeloBacktest = input.bool(false, "Modelo del backtest del autor: sin sesgo ni diario, hasta 3 al día", group=G_CAND)
@@ -62,7 +66,8 @@ mercado = str.contains(tk, "EURUSD") ? "eurusd" : str.contains(tk, "GBPUSD") ? "
 //@MERCADOS
 dif = difIn >= 0 ? difIn : difBot
 col = colIn >= 0 ? colIn : colBot
-maxOps = modeloBacktest ? 3 : maxOpsIn
+modoAutor = modo == MODO_AUTOR_TXT
+maxOps = modeloBacktest and not modoAutor ? 3 : maxOpsIn
 
 // ───────────────────────── Tipos ─────────────────────────
 
@@ -113,6 +118,7 @@ type Setup
     string via
     string escenario
     float vela1Rel
+    string marco = "H4"
 
 type Op
     int dir
@@ -143,6 +149,12 @@ type Estado
     int senal = 0
     bool cierreSemanal = false
     string aviso = ""
+    Vela ultimaVerde
+    Vela ultimaRoja
+    bool gastadoAlc = false
+    bool gastadoBaj = false
+    bool obAlc = false
+    bool obBaj = false
 
 // ───────────────────────── Estado ─────────────────────────
 
@@ -323,7 +335,7 @@ f_cerrado(Marco m, int d) =>
     Evento u = m.ultimo
     if not na(u)
         if u.rango and u.estado == 0 and u.dir == d
-            s := Setup.new(-u.id, f_claveAnticipo(m.codigo, u.iVelaIni, d), d, u.barrido, u.objetivo, u.iFormado, "cierre", u.escenario, u.vela1Rel)
+            s := Setup.new(-u.id, f_claveAnticipo(m.codigo, u.iVelaIni, d), d, u.barrido, u.objetivo, u.iFormado, "cierre", u.escenario, u.vela1Rel, m.nombre)
     s
 
 // La vela en curso ya barrió el extremo de la anterior (sin tomar también el otro) y el precio volvió dentro.
@@ -338,7 +350,7 @@ f_baseAnticipo(Marco m, int d, float precio) =>
 
 f_hacerAnticipo(Marco m, int d, int iInicio) =>
     Vela p = array.get(m.cerradas, array.size(m.cerradas) - 1)
-    Setup.new(f_claveAnticipo(m.codigo, m.parcial.iIni, d), 0, d, d > 0 ? m.parcial.l : m.parcial.h, d > 0 ? p.h : p.l, iInicio, "anticipo", f_escenario(m.ultimo, d), m.relativo(p))
+    Setup.new(f_claveAnticipo(m.codigo, m.parcial.iIni, d), 0, d, d > 0 ? m.parcial.l : m.parcial.h, d > 0 ? p.h : p.l, iInicio, "anticipo", f_escenario(m.ultimo, d), m.relativo(p), m.nombre)
 
 // El 4H antes de que cierre su vela: con un rango de 1H cerrado después del barrido. Con la regla candidata
 // del autor, sin esperar al 1H: «nos toma el alto, empieza a reaccionar, creamos el order block».
@@ -495,7 +507,16 @@ f_niveles(int d, float precio, Setup s) =>
         ok := false
         motivo := "stop demasiado corto"
     if ok
-        tp := entrada + d * ratio * riesgo
+        if modoAutor
+            // «El objetivo será completar el rango que operamos»; con menos de 1 R no se entra («ratio uno», no).
+            float objetivoRango = d > 0 ? s.objetivo : s.objetivo + dif
+            if (objetivoRango - entrada) * d < riesgo
+                ok := false
+                motivo := "el objetivo del 4H está a menos de 1 R"
+            else
+                tp := objetivoRango
+        else
+            tp := entrada + d * ratio * riesgo
     [ok, motivo, entrada, stop, riesgo, tp]
 
 f_cabe(int d, float tp, float objetivo) =>
@@ -538,8 +559,8 @@ f_abrir(Estado e, int d, float entrada, float stop, float riesgo, float tp, stri
     e.op := Op.new(d, entrada, stop, tp, riesgo, lE, lS, lT)
     e.senal := d
     map.put(opsDia, dia, nz(map.get(opsDia, dia)) + 1)
-    label.new(bar_index, d > 0 ? low : high, (d > 0 ? "COMPRA" : "VENTA") + "\nNota " + nota, style=d > 0 ? label.style_label_up : label.style_label_down, color=d > 0 ? color.new(color.green, 0) : color.new(color.red, 0), textcolor=color.white, size=size.small, tooltip=detalle)
-    e.aviso := "BOT CRT · " + (d > 0 ? "COMPRA " : "VENTA ") + nombreMercado + " · Entrada " + f_texto(entrada) + " · Stop " + f_texto(stop) + " · TP " + f_texto(tp) + " · 1 a " + str.tostring(ratio) + " · Nota " + nota
+    label.new(bar_index, d > 0 ? low : high, (d > 0 ? "COMPRA" : "VENTA") + (modoAutor ? " A+" : "") + "\nNota " + nota, style=d > 0 ? label.style_label_up : label.style_label_down, color=d > 0 ? color.new(color.green, 0) : color.new(color.red, 0), textcolor=color.white, size=size.small, tooltip=detalle)
+    e.aviso := "BOT CRT · " + (d > 0 ? "COMPRA " : "VENTA ") + nombreMercado + " · Entrada " + f_texto(entrada) + " · Stop " + f_texto(stop) + " · TP " + f_texto(tp) + " · 1 a " + str.tostring((tp - entrada) / riesgo * d, "0.0") + " · Nota " + nota
     for i = 0 to math.max(array.size(casoId) - 1, 0)
         if array.size(casoId) > 0 and array.get(casoMercado, i) == mercado and tc >= array.get(casoDesde, i) and tc <= array.get(casoHasta, i)
             if d > 0
@@ -574,9 +595,10 @@ f_mirar(Estado e, Vela b, Vela a, int d, int dia, int kW, int mc, int tc) =>
     bool horario = desdeM < mc and mc <= hastaM and not (espera > 0 and mc > 570 and mc < 570 + espera)
     float cA = math.abs(a.c - a.o)
     float cB = math.abs(b.c - b.o)
-    // Order block (decidido el 19-10-2026): la vela a favor es más fuerte que la anterior en contra y cierra más
-    // allá de donde abrió esta.
-    bool ob = cB > cA and (d > 0 ? (a.c < a.o and b.c > b.o and b.c > a.o) : (a.c > a.o and b.c < b.o and b.c < a.o))
+    // Order block. Como el bot (decidido el 19-10-2026): la vela a favor es más fuerte que la anterior en contra y
+    // cierra más allá de donde abrió esta. Como el autor: la primera vela a favor que cierra más allá del extremo de la
+    // última vela contraria (calculado en cada barra, abajo).
+    bool ob = modoAutor ? (d > 0 ? e.obAlc : e.obBaj) : cB > cA and (d > 0 ? (a.c < a.o and b.c > b.o and b.c > a.o) : (a.c > a.o and b.c < b.o and b.c < a.o))
     if horario and ob
         float precio = b.c
         Setup s = f_setup4h(d, precio)
@@ -584,6 +606,12 @@ f_mirar(Estado e, Vela b, Vela a, int d, int dia, int kW, int mc, int tc) =>
             if s.via == "cierre" and (f_usada(s.idea1) or f_usada(s.idea2))
                 // La idea de 4H ya dio su entrada: si la vela en curso forma otro rango a favor, es una idea nueva.
                 s := f_anticipo4h(d, precio)
+        if na(s) and modoAutor
+            // «En vez de un rango de 4H a favor, se completó el rango bajista contrario»: se opera el rango de 1H.
+            Evento u4 = h4.ultimo
+            if not na(u4)
+                if u4.rango and u4.dir == -d and u4.estado == 1
+                    s := f_cerrado(h1, d)
         if not na(s)
             if b.iFin > s.iInicio and not (f_usada(s.idea1) or f_usada(s.idea2))
                 Setup sd = f_setupD1(d, precio)
@@ -592,15 +620,29 @@ f_mirar(Estado e, Vela b, Vela a, int d, int dia, int kW, int mc, int tc) =>
                 if not na(sd) and not modeloBacktest
                     objetivo := sd.objetivo
                 bool diarioVale = modeloBacktest or not na(sd)
+                bool objetivoVale = true
+                if modoAutor
+                    // «Lo primero, un objetivo en un marco mayor: un día o una semana».
+                    objetivo := na
+                    if not na(sd)
+                        objetivo := sd.objetivo
+                    else
+                        objetivoVale := false
+                        if not na(wU)
+                            if wU.rango and wU.estado == 0 and wU.dir == d and f_semaforo(d1.ultimo, d) != "rojo"
+                                objetivo := wU.objetivo
+                                objetivoVale := true
                 [nOk, motivoN, entrada, stop, riesgo, tp] = f_niveles(d, precio, s)
                 string c3 = f_colorSimple(h3, d)
                 string c1 = f_colorSimple(h1, d)
                 array<string> bs = f_banderas(d, mc, precio, c3, c1, nOk, riesgo)
                 string nota = array.size(bs) == 0 ? "A" : array.size(bs) == 1 ? "B" : "C"
                 int sesgo = f_sesgo(kW)
-                if not modeloBacktest and sesgo != d
+                if modoAutor and not objetivoVale
+                    decision := "sin objetivo a favor en el diario ni en el semanal"
+                else if not modoAutor and not modeloBacktest and sesgo != d
                     decision := "sin sesgo a favor"
-                else if not diarioVale
+                else if not modoAutor and not diarioVale
                     decision := "el diario no está a favor"
                 else if not na(e.op)
                     decision := "ya había una operación abierta"
@@ -608,7 +650,9 @@ f_mirar(Estado e, Vela b, Vela a, int d, int dia, int kW, int mc, int tc) =>
                     array.push(usados, s.idea1)
                     if s.idea2 != 0
                         array.push(usados, s.idea2)
-                    if topeR > 0 and nz(map.get(rDia, dia)) <= -topeR
+                    if modoAutor and c1 != "verde"
+                        decision := "el 1H no acompaña"
+                    else if topeR > 0 and nz(map.get(rDia, dia)) <= -topeR
                         decision := "tope de pérdida del día"
                     else if nz(map.get(opsDia, dia)) >= maxOps
                         decision := "tope de operaciones del día"
@@ -623,7 +667,10 @@ f_mirar(Estado e, Vela b, Vela a, int d, int dia, int kW, int mc, int tc) =>
                 if s.idea2 != 0
                     array.push(vistos, s.idea2)
                 string detalle = (d > 0 ? "Compra" : "Venta") + " al cierre de la vela de M15 de las " + str.format_time(tc, "HH:mm", NY) + " (Nueva York) · " + (mc <= 570 ? "Londres" : "tras la apertura")
-                detalle += "\nRango de 4H " + (s.via == "cierre" ? "cerrado" : "anticipado") + " · escenario " + s.escenario + " · diario " + colorD + " · sesgo de " + f_textoDir(sesgo)
+                if modoAutor
+                    detalle += "\nSetup A+: objetivo en el " + (not na(sd) ? "diario" : "semanal") + " · rango de " + (s.marco == "H1" ? "1H" : "4H") + " " + (s.via == "cierre" ? "cerrado" : "anticipado") + " · 1H " + c1 + " · order block por encima del extremo de la última vela contraria"
+                else
+                    detalle += "\nRango de 4H " + (s.via == "cierre" ? "cerrado" : "anticipado") + " · escenario " + s.escenario + " · diario " + colorD + " · sesgo de " + f_textoDir(sesgo)
                 detalle += "\nNota " + nota + (array.size(bs) > 0 ? ": " + array.join(bs, ", ") : ": sin banderas rojas")
                 if nOk
                     detalle += "\nEntrada " + f_texto(entrada) + " · Stop " + f_texto(stop) + " · TP " + f_texto(tp)
@@ -713,7 +760,18 @@ if barstate.isconfirmed and esM15 and desdeM >= 0 and hastaM >= 0
         if finSemana and not na(est.op)
             f_salir(est, est.op.dir > 0 ? close : close + dif, "Cierre semanal", dia)
             est.cierreSemanal := true
-        // 5. Al cierre de la barra, para compras y para ventas.
+        // 5. El order block del autor se forma una sola vez con cada vela contraria: la primera vela a favor que cierra
+        //    más allá de su extremo. Después, al cierre de la barra, para compras y para ventas.
+        bool obA = false
+        bool obV = false
+        if close > open and not est.gastadoAlc and not na(est.ultimaRoja)
+            obA := close > est.ultimaRoja.h
+        if close < open and not est.gastadoBaj and not na(est.ultimaVerde)
+            obV := close < est.ultimaVerde.l
+        est.obAlc := obA
+        est.obBaj := obV
+        est.gastadoAlc := est.gastadoAlc or est.obAlc
+        est.gastadoBaj := est.gastadoBaj or est.obBaj
         int tc = time + 900000
         int mc = hour(tc, NY) * 60 + minute(tc, NY)
         if not na(est.anterior) and not finSemana
@@ -725,6 +783,12 @@ if barstate.isconfirmed and esM15 and desdeM >= 0 and hastaM >= 0
                 array.set(casoMin, i, na(array.get(casoMin, i)) ? low : math.min(array.get(casoMin, i), low))
                 array.set(casoMax, i, na(array.get(casoMax, i)) ? high : math.max(array.get(casoMax, i), high))
         est.anterior := b
+        if close > open
+            est.ultimaVerde := b
+            est.gastadoBaj := false
+        else if close < open
+            est.ultimaRoja := b
+            est.gastadoAlc := false
         est.kWPrev := kW
         est.diaPrev := dia
         est.cierrePrev := close

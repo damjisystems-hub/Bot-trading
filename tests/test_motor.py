@@ -4,7 +4,7 @@ from datetime import date
 
 from crt.marcos import Marco, Setup
 from crt.mercados import Mercado
-from crt.motor import Ajustes, Operacion, _cabe, _niveles, _revisar_salida, probar, probar_cartera, sesgo_de_fondo
+from crt.motor import MODO_AUTOR, SIN_OBJETIVO, Ajustes, Operacion, _cabe, _niveles, _Recorrido, _revisar_salida, probar, probar_cartera, sesgo_de_fondo
 from crt.rangos import Evento
 from crt.velas import Vela
 from tests.ayuda import SIN_COSTES, camino, espejo, ny
@@ -498,6 +498,44 @@ class SesgoDeFondo(unittest.TestCase):
         rango_bajista = Evento("MN", "rango", -1, 0, 0, objetivo=1, barrido=2)
         self.assertEqual(sesgo_de_fondo(self._marco(ruptura_alcista), self._marco(rango_bajista), veto_mensual=False), +1)
         self.assertEqual(sesgo_de_fondo(self._marco(None), self._marco(rango_bajista), veto_mensual=False), -1)
+
+
+class VideoDeLosFundamentos(unittest.TestCase):
+    """Las reglas candidatas del vídeo de los fundamentos (22-11-2026)."""
+
+    PUNTOS = HASTA_LAS_9 + ORDER_BLOCK_9_30 + [("2025-03-04 11:00", 125), ("2025-03-04 13:00", 125)]
+
+    def test_order_block_del_autor_entra_con_el_cierre_por_encima_del_maximo(self):
+        # La verde de las 9:30 (102,5 → 104) cierra por encima del máximo de la última roja (103): entra igual.
+        res = probar(camino(self.PUNTOS), SIN_COSTES, replace(SOLO_4H, order_block_del_autor=True))
+        self.assertEqual([o.hora_entrada for o in res.operaciones], [ny("2025-03-04 09:30")])
+
+    def test_sin_objetivo_en_el_diario_ni_en_el_semanal_no_entra(self):
+        res = probar(camino(self.PUNTOS), SIN_COSTES, replace(SOLO_4H, objetivo_mayor=True))
+        self.assertEqual(res.operaciones, [])
+        self.assertEqual(res.descartadas[SIN_OBJETIVO], 1)
+
+    def _recorrido_con(self, h4_ultimo, h1_ultimo, ajustes):
+        rec = _Recorrido(SIN_COSTES, ajustes, {})
+        rec.h4.ultimo, rec.h1.ultimo = h4_ultimo, h1_ultimo
+        return rec
+
+    def test_4h_contrario_completado_y_rango_de_1h_a_favor_opera_el_de_1h(self):
+        contrario = Evento("H4", "rango", -1, 0, 0, objetivo=95, barrido=110, estado="completado")
+        rango_1h = Evento("H1", "rango", +1, 4, 1, objetivo=108, barrido=99)
+        roja, verde = Vela(ny("2025-03-04 03:15"), 103, 103, 102.5, 102.5, 10, 10), Vela(ny("2025-03-04 03:30"), 102.5, 104, 102.5, 104, 11, 11)
+        ajustes = replace(SOLO_4H, h4_opuesto_completado=True, comprobar_objetivo_diario=False)
+        rec = self._recorrido_con(contrario, rango_1h, ajustes)
+        rec._mirar(verde, roja, +1)
+        self.assertIsNotNone(rec.abierta)
+        self.assertEqual((rec.abierta.entrada, rec.abierta.stop), (104, 99))  # el stop, detrás del barrido de 1H
+        # Sin la regla, no hay rango de 4H a favor y no entra.
+        rec = self._recorrido_con(contrario, rango_1h, replace(ajustes, h4_opuesto_completado=False))
+        rec._mirar(verde, roja, +1)
+        self.assertIsNone(rec.abierta)
+
+    def test_el_modo_autor_son_ajustes_que_existen(self):
+        replace(Ajustes(), **MODO_AUTOR)  # si sobrara o faltara algún campo, fallaría
 
 
 class Cartera(unittest.TestCase):

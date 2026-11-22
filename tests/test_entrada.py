@@ -1,7 +1,7 @@
 import unittest
 from datetime import time
 
-from crt.entrada import es_order_block, hora_permitida, sesion
+from crt.entrada import es_order_block, es_order_block_del_autor, hora_permitida, sesion
 from crt.velas import Vela
 from tests.ayuda import ny
 
@@ -26,6 +26,16 @@ class OrderBlock(unittest.TestCase):
     def test_ventas_al_reves(self):
         self.assertTrue(es_order_block(vela(97, 97.5), vela(97.5, 96), -1))
         self.assertFalse(es_order_block(vela(97, 97.5), vela(97.5, 96), +1))
+
+    def test_el_del_autor_cierra_por_encima_del_maximo_de_la_ultima_roja(self):
+        # Vídeo de los fundamentos: «cuando cierra por encima de la última vela bajista, en concreto de su máximo».
+        roja = Vela(T, 103, 103.4, 102, 102.5)
+        self.assertTrue(es_order_block_del_autor(roja, vela(102.5, 103.5), +1))  # cuerpo más pequeño: da igual
+        self.assertFalse(es_order_block_del_autor(roja, vela(102.5, 103.2), +1))  # pasa la apertura, no el máximo
+        self.assertFalse(es_order_block_del_autor(None, vela(102.5, 104), +1))
+        verde = Vela(T, 97, 98, 96.6, 97.5)
+        self.assertTrue(es_order_block_del_autor(verde, vela(97.5, 96.5), -1))
+        self.assertFalse(es_order_block_del_autor(verde, vela(97.5, 96.8), -1))
 
 
 class Horario(unittest.TestCase):
