@@ -1,0 +1,849 @@
+//@version=5
+strategy("CRT · prueba con el pasado", shorttitle="CRT prueba", overlay=true, process_orders_on_close=true, initial_capital=10000, max_labels_count=500, max_lines_count=500, max_boxes_count=500)
+// Generado por tradingview/generar.py a partir de tradingview/plantilla.pine: no lo editéis a mano.
+//
+// Las mismas reglas que el bot CRT de Python (carpeta crt/) y que el bot de MT5 (mt5/BotCRT.mq5), para el
+// gráfico de 15 minutos. Monta sus propias velas de 1H, 3H, 4H y diario en hora de Nueva York (el día de
+// trading va de 17:00 a 17:00). Las semanales y las mensuales salen de la historia larga de TradingView.
+// Las reglas están explicadas en ESTRATEGIA.md. Si cambia una regla, se cambia allí, en crt/, en MT5 y aquí.
+
+// ───────────────────────── Ajustes ─────────────────────────
+
+G_REGLAS = "Reglas (las del bot)"
+ratio = input.float(2.0, "TP: veces lo que se arriesga (1 a 2)", minval=0.5, step=0.5, group=G_REGLAS)
+espera = input.int(45, "Minutos sin entrar tras la apertura de las 9:30 (NY)", minval=0, group=G_REGLAS)
+desdeTxt = input.string("01:00", "Entradas desde (hora de Nueva York)", group=G_REGLAS)
+hastaTxt = input.string("13:00", "Entradas hasta (hora de Nueva York)", group=G_REGLAS)
+maxOpsIn = input.int(2, "Máximo de operaciones al día", minval=1, group=G_REGLAS)
+topeR = input.float(3.0, "Tope de pérdida del día, en R (0 = sin tope)", minval=0, group=G_REGLAS)
+inicio4h = input.int(17, "Las velas de 4H empiezan a esta hora de NY (17: las de la 1, las 5 y las 9)", minval=0, maxval=23, group=G_REGLAS)
+comprobarObjDiario = input.bool(true, "No entrar si el TP queda más allá del objetivo del diario", group=G_REGLAS)
+sesgoEquipo = input.string("El que calcula el bot", "Sesgo de esta semana", options=["El que calcula el bot", "Compras", "Ventas", "Ninguno"], group=G_REGLAS, tooltip="Lo que confirmáis o cambiáis cada lunes. Solo vale para la semana en curso: la historia se repasa siempre con el del bot.")
+
+G_CAND = "Reglas candidatas (apagadas: en 20 años no ganan)"
+anticipoSin1h = input.bool(false, "4H anticipado sin esperar al 1H (barrido, vuelta dentro y order block)", group=G_CAND)
+sinVetoMensual = input.bool(false, "Sesgo: manda el semanal aunque el mensual vaya en contra", group=G_CAND)
+modeloBacktest = input.bool(false, "Modelo del backtest del autor: sin sesgo ni diario, hasta 3 al día", group=G_CAND)
+
+G_COSTES = "Costes"
+difIn = input.float(-1.0, "Diferencial, en precio (-1 = el del bot para este mercado)", group=G_COSTES)
+colIn = input.float(-1.0, "Colchón del stop detrás del barrido, en precio (-1 = el del bot)", group=G_COSTES)
+
+G_VER = "Qué enseñar"
+verDescartadas = input.bool(true, "Las señales que descarta, con el motivo", group=G_VER)
+verNiveles = input.bool(true, "El rango de 4H y el objetivo del diario de ahora", group=G_VER)
+verCasos = input.bool(true, "Los casos del examen (situaciones de los vídeos)", group=G_VER)
+verPanel = input.bool(true, "El panel y los resultados", group=G_VER)
+riesgoPct = input.float(1.0, "Riesgo por operación (% de la cuenta)", minval=0.1, step=0.1, group="Prueba con el pasado")
+
+NY = "America/New_York"
+esM15 = timeframe.period == "15"
+
+f_minutos(string s) =>
+    array<string> p = str.split(s, ":")
+    int r = -1
+    if array.size(p) == 2
+        r := int(str.tonumber(array.get(p, 0))) * 60 + int(str.tonumber(array.get(p, 1)))
+    r
+
+desdeM = f_minutos(desdeTxt)
+hastaM = f_minutos(hastaTxt)
+
+// El mercado del gráfico y lo que cuesta entrar en él (crt/mercados.py).
+tk = str.upper(syminfo.ticker)
+mercado = str.contains(tk, "EURUSD") ? "eurusd" : str.contains(tk, "GBPUSD") ? "gbpusd" : (str.contains(tk, "XAU") or str.contains(tk, "GOLD")) ? "oro" : (str.contains(tk, "NAS") or str.contains(tk, "US100") or str.contains(tk, "USTEC") or str.contains(tk, "NQ") or str.contains(tk, "NDX")) ? "nasdaq" : "otro"
+difBot = mercado == "nasdaq" ? 1.5 : mercado == "eurusd" ? 0.00008 : mercado == "gbpusd" ? 0.00012 : mercado == "oro" ? 0.3 : 0.0
+colBot = mercado == "nasdaq" ? 3.0 : mercado == "eurusd" ? 0.0001 : mercado == "gbpusd" ? 0.00015 : mercado == "oro" ? 0.5 : 0.0
+nombreMercado = mercado == "nasdaq" ? "NASDAQ" : mercado == "eurusd" ? "EUR/USD" : mercado == "gbpusd" ? "GBP/USD" : mercado == "oro" ? "Oro (XAU/USD)" : syminfo.ticker
+dif = difIn >= 0 ? difIn : difBot
+col = colIn >= 0 ? colIn : colBot
+maxOps = modeloBacktest ? 3 : maxOpsIn
+
+// ───────────────────────── Tipos ─────────────────────────
+
+// Una vela de un marco, hecha con barras de 15 minutos. iIni e iFin: su primera y su última barra.
+type Vela
+    int t
+    float o
+    float h
+    float l
+    float c
+    int iIni
+    int iFin
+
+// Lo que forma la vela 2 respecto a la vela 1: un rango (toma un extremo y cierra dentro) o una ruptura.
+type Evento
+    int id
+    bool rango
+    int dir
+    int iFormado
+    int iVelaIni
+    float objetivo
+    float barrido
+    string escenario = "otro"
+    float vela1Rel
+    int estado = 0
+    int velasDesde = 0
+    int velasHastaCompletar = -1
+
+// Un marco de tiempo: sus velas cerradas (las últimas 21), la vela en curso y su último evento.
+type Marco
+    string nombre
+    int codigo
+    array<Vela> cerradas
+    Vela parcial
+    int clave = -1
+    Evento ultimo
+    int barridoAlc = -1
+    int barridoBaj = -1
+
+// Un rango a favor desde el que buscar la entrada: cerrado o anticipado.
+type Setup
+    int idea1
+    int idea2
+    int dir
+    float barrido
+    float objetivo
+    int iInicio
+    string via
+    string escenario
+    float vela1Rel
+
+type Op
+    int dir
+    float entrada
+    float stop
+    float tp
+    float riesgo
+    line lE
+    line lS
+    line lT
+
+type Estado
+    Op op
+    Vela anterior
+    int n = 0
+    int ganadas = 0
+    float total = 0.0
+    int racha = 0
+    int peorRacha = 0
+    float acum = 0.0
+    float pico = 0.0
+    float peorCaida = 0.0
+    int primera = 0
+    int ultimaCierre = 0
+    int kWPrev = 0
+    int diaPrev = 0
+    float cierrePrev = na
+    int senal = 0
+    bool cierreSemanal = false
+    string aviso = ""
+
+// ───────────────────────── Estado ─────────────────────────
+
+var contador = array.new_int(1, 0)
+var Marco h1 = Marco.new("H1", 1, array.new<Vela>())
+var Marco h3 = Marco.new("H3", 2, array.new<Vela>())
+var Marco h4 = Marco.new("H4", 3, array.new<Vela>())
+var Marco d1 = Marco.new("D1", 4, array.new<Vela>())
+var Evento wU = na
+var Evento mU = na
+var Estado est = Estado.new()
+var usados = array.new_int()
+var vistos = array.new_int()
+var map<int, float> rDia = map.new<int, float>()
+var map<int, int> opsDia = map.new<int, int>()
+
+// ───────────────────────── Rangos (crt/rangos.py) ─────────────────────────
+
+f_evaluar(Vela v1, Vela v2) =>
+    bool tomaMin = v2.l < v1.l
+    bool tomaMax = v2.h > v1.h
+    Evento e = na
+    if v2.c > v1.h
+        e := Evento.new(0, false, 1, v2.iFin, v2.iIni)
+    else if v2.c < v1.l
+        e := Evento.new(0, false, -1, v2.iFin, v2.iIni)
+    else if tomaMin and not tomaMax
+        e := Evento.new(0, true, 1, v2.iFin, v2.iIni, v1.h, v2.l)
+    else if tomaMax and not tomaMin
+        e := Evento.new(0, true, -1, v2.iFin, v2.iIni, v1.l, v2.h)
+    e
+
+// Verde: rango a favor activo. Rojo: rango en contra activo o ruptura en contra. Ámbar: lo demás.
+f_semaforo(Evento u, int d) =>
+    string r = "ambar"
+    if not na(u)
+        if not u.rango
+            r := u.dir != d ? "rojo" : "ambar"
+        else if u.estado == 0
+            r := u.dir == d ? "verde" : "rojo"
+    r
+
+f_escenario(Evento p, int d) =>
+    string r = "otro"
+    if not na(p)
+        if p.rango and p.dir != d
+            if p.estado == 0
+                r := "3"
+            else if p.estado == 1
+                r := p.velasHastaCompletar == 1 ? "2" : "1"
+    r
+
+// Hacia dónde empuja el último evento de un marco grande (sesgo de fondo).
+f_direccion(Evento u) =>
+    int r = 0
+    if not na(u)
+        if not u.rango
+            r := u.dir
+        else if u.estado == 0
+            r := u.dir
+    r
+
+f_completar(Evento u, Vela b) =>
+    if not na(u)
+        if u.rango and u.estado == 0 and u.iFormado < b.iFin
+            if (u.dir > 0 and b.h >= u.objetivo) or (u.dir < 0 and b.l <= u.objetivo)
+                u.estado := 1
+                u.velasHastaCompletar := u.velasDesde + 1
+    true
+
+// ───────────────────────── Velas en hora de Nueva York (crt/velas.py) ─────────────────────────
+
+f_diaNY(int t) =>
+    int(math.floor(timestamp("UTC", year(t, NY), month(t, NY), dayofmonth(t, NY), 0, 0) / 86400000.0))
+
+// Día de trading (de 17:00 a 17:00), día de la semana (0 = lunes) y la vela de cada marco a la que pertenece
+// una barra que empieza a la hora t.
+f_claves(int t) =>
+    int h = hour(t, NY)
+    int dia0 = f_diaNY(t)
+    int dia = dia0 + (h >= 17 ? 1 : 0)
+    int hT = (h + 7) % 24
+    int k1 = dia * 24 + hT
+    int k3 = dia * 8 + math.floor(hT / 3.0)
+    int h4t = h + 24 - inicio4h
+    int k4 = (dia0 + (h4t >= 24 ? 1 : 0)) * 6 + math.floor((h4t % 24) / 4.0)
+    int wd = (dia + 3) % 7
+    int kW = dia - wd
+    [dia, wd, k1, k3, k4, kW]
+
+f_semanaDe(int t) =>
+    [dia, wd, k1, k3, k4, kW] = f_claves(t)
+    kW
+
+// ───────────────────────── Marcos (crt/marcos.py) ─────────────────────────
+
+method rangoMedio(Marco m) =>
+    float r = na
+    int n = array.size(m.cerradas)
+    int k = math.min(n, 20)
+    if k >= 5
+        float s = 0.0
+        for i = n - k to n - 1
+            Vela v = array.get(m.cerradas, i)
+            s += v.h - v.l
+        r := s / k
+    r
+
+method relativo(Marco m, Vela v) =>
+    float medio = m.rangoMedio()
+    float r = na
+    if not na(medio) and medio > 0
+        r := (v.h - v.l) / medio
+    r
+
+// ¿La vela en curso ya pasó el extremo de la anterior hacia ese lado? En compras, «tomando máximos».
+method tomando(Marco m, int d) =>
+    bool r = false
+    int n = array.size(m.cerradas)
+    if not na(m.parcial) and n > 0
+        Vela p = array.get(m.cerradas, n - 1)
+        r := d > 0 ? m.parcial.h > p.h : m.parcial.l < p.l
+    r
+
+method sumar(Marco m, Vela b, int clave) =>
+    if na(m.parcial)
+        m.parcial := Vela.new(b.t, b.o, b.h, b.l, b.c, b.iIni, b.iFin)
+        m.clave := clave
+        m.barridoAlc := -1
+        m.barridoBaj := -1
+    else
+        m.parcial.h := math.max(m.parcial.h, b.h)
+        m.parcial.l := math.min(m.parcial.l, b.l)
+        m.parcial.c := b.c
+        m.parcial.iFin := b.iFin
+    int n = array.size(m.cerradas)
+    if n > 0
+        Vela p = array.get(m.cerradas, n - 1)
+        if m.barridoAlc < 0 and m.parcial.l < p.l
+            m.barridoAlc := b.iFin
+        if m.barridoBaj < 0 and m.parcial.h > p.h
+            m.barridoBaj := b.iFin
+    true
+
+method cerrar(Marco m) =>
+    Vela v = m.parcial
+    m.parcial := na
+    Evento u = m.ultimo
+    if not na(u)
+        if u.rango and u.estado == 0
+            u.velasDesde += 1
+            if (u.dir > 0 and v.c < u.barrido) or (u.dir < 0 and v.c > u.barrido)
+                u.estado := 2
+    int n = array.size(m.cerradas)
+    Evento nuevo = na
+    if n > 0
+        Vela p = array.get(m.cerradas, n - 1)
+        nuevo := f_evaluar(p, v)
+        if not na(nuevo)
+            nuevo.vela1Rel := m.relativo(p)
+    array.push(m.cerradas, v)
+    if array.size(m.cerradas) > 21
+        array.shift(m.cerradas)
+    if not na(nuevo)
+        array.set(contador, 0, array.get(contador, 0) + 1)
+        nuevo.id := array.get(contador, 0)
+        nuevo.escenario := f_escenario(u, nuevo.dir)
+        m.ultimo := nuevo
+    true
+
+// ───────────────────────── Setups: cerrados y anticipados ─────────────────────────
+
+f_claveAnticipo(int codigo, int iIni, int d) =>
+    (iIni * 8 + codigo) * 2 + (d > 0 ? 1 : 0)
+
+f_cerrado(Marco m, int d) =>
+    Setup s = na
+    Evento u = m.ultimo
+    if not na(u)
+        if u.rango and u.estado == 0 and u.dir == d
+            s := Setup.new(-u.id, f_claveAnticipo(m.codigo, u.iVelaIni, d), d, u.barrido, u.objetivo, u.iFormado, "cierre", u.escenario, u.vela1Rel)
+    s
+
+// La vela en curso ya barrió el extremo de la anterior (sin tomar también el otro) y el precio volvió dentro.
+f_baseAnticipo(Marco m, int d, float precio) =>
+    bool ok = false
+    int ib = d > 0 ? m.barridoAlc : m.barridoBaj
+    int n = array.size(m.cerradas)
+    if not na(m.parcial) and n > 0 and ib >= 0
+        Vela p = array.get(m.cerradas, n - 1)
+        ok := p.l < precio and precio < p.h and not m.tomando(d)
+    [ok, ib]
+
+f_hacerAnticipo(Marco m, int d, int iInicio) =>
+    Vela p = array.get(m.cerradas, array.size(m.cerradas) - 1)
+    Setup.new(f_claveAnticipo(m.codigo, m.parcial.iIni, d), 0, d, d > 0 ? m.parcial.l : m.parcial.h, d > 0 ? p.h : p.l, iInicio, "anticipo", f_escenario(m.ultimo, d), m.relativo(p))
+
+// El 4H antes de que cierre su vela: con un rango de 1H cerrado después del barrido. Con la regla candidata
+// del autor, sin esperar al 1H: «nos toma el alto, empieza a reaccionar, creamos el order block».
+f_anticipo4h(int d, float precio) =>
+    Setup s = na
+    [ok, ib] = f_baseAnticipo(h4, d, precio)
+    if ok
+        if anticipoSin1h
+            s := f_hacerAnticipo(h4, d, ib)
+        else
+            Setup s1 = f_cerrado(h1, d)
+            if not na(s1)
+                if s1.iInicio >= ib
+                    s := f_hacerAnticipo(h4, d, s1.iInicio)
+    s
+
+f_setup4h(int d, float precio) =>
+    Setup s = f_cerrado(h4, d)
+    if na(s)
+        s := f_anticipo4h(d, precio)
+    s
+
+// El diario antes de que cierre su vela: con un rango de 4H formado después del barrido.
+f_anticipoD1(int d, float precio) =>
+    Setup s = na
+    [ok, ib] = f_baseAnticipo(d1, d, precio)
+    if ok
+        Setup s4 = f_setup4h(d, precio)
+        if not na(s4)
+            if s4.via == "cierre" and s4.iInicio < ib
+                s4 := f_anticipo4h(d, precio)
+        if not na(s4)
+            if s4.iInicio >= ib
+                s := f_hacerAnticipo(d1, d, s4.iInicio)
+    s
+
+f_setupD1(int d, float precio) =>
+    Setup s = f_cerrado(d1, d)
+    if na(s)
+        s := f_anticipoD1(d, precio)
+    s
+
+f_colorSimple(Marco m, int d) =>
+    na(f_cerrado(m, d)) ? f_semaforo(m.ultimo, d) : "verde"
+
+f_color4h(int d, float precio) =>
+    na(f_setup4h(d, precio)) ? f_semaforo(h4.ultimo, d) : "verde"
+
+f_colorD1(int d, float precio) =>
+    na(f_setupD1(d, precio)) ? f_semaforo(d1.ultimo, d) : "verde"
+
+// ───────────────────────── Semanal y mensual ─────────────────────────
+
+// Se calcula con las velas semanales o mensuales de TradingView: el último evento de las velas ya cerradas.
+f_crtCerradas() =>
+    var bool uRango = false
+    var int uDir = 0
+    var float uObj = na
+    var float uBarr = na
+    var int uEstado = -1
+    var int uId = 0
+    if not na(close[1])
+        if uEstado == 0 and uRango
+            if (uDir > 0 and high[1] >= uObj) or (uDir < 0 and low[1] <= uObj)
+                uEstado := 1
+        if uEstado == 0 and uRango
+            if (uDir > 0 and close[1] < uBarr) or (uDir < 0 and close[1] > uBarr)
+                uEstado := 2
+        if not na(close[2])
+            bool tomaMin = low[1] < low[2]
+            bool tomaMax = high[1] > high[2]
+            int nDir = 0
+            bool nRango = false
+            if close[1] > high[2]
+                nDir := 1
+            else if close[1] < low[2]
+                nDir := -1
+            else if tomaMin and not tomaMax
+                nDir := 1
+                nRango := true
+            else if tomaMax and not tomaMin
+                nDir := -1
+                nRango := true
+            if nDir != 0
+                uRango := nRango
+                uDir := nDir
+                uObj := nRango ? (nDir > 0 ? high[2] : low[2]) : na
+                uBarr := nRango ? (nDir > 0 ? low[1] : high[1]) : na
+                uEstado := 0
+                uId += 1
+    [uRango, uDir, uObj, uBarr, uEstado, uId]
+
+[wR, wD, wO, wB, wE, wI] = request.security(syminfo.tickerid, "W", f_crtCerradas(), lookahead=barmerge.lookahead_on)
+[mR, mD, mO, mB, mE, mI] = request.security(syminfo.tickerid, "M", f_crtCerradas(), lookahead=barmerge.lookahead_on)
+
+// Manda el semanal; si no dice nada, el mensual. Si se contradicen, no hay sesgo y no se opera.
+f_sesgoBot() =>
+    int s = f_direccion(wU)
+    int m = f_direccion(mU)
+    int r = s
+    if s == 0
+        r := m
+    else if m == -s and not sinVetoMensual
+        r := 0
+    r
+
+f_sesgo(int kW) =>
+    int r = f_sesgoBot()
+    if sesgoEquipo != "El que calcula el bot" and kW == f_semanaDe(timenow)
+        r := sesgoEquipo == "Compras" ? 1 : sesgoEquipo == "Ventas" ? -1 : 0
+    r
+
+f_textoDir(int d) =>
+    d > 0 ? "compras" : d < 0 ? "ventas" : "sin sesgo"
+
+// ───────────────────────── Casos del examen (casos/casos.csv) ─────────────────────────
+
+var casoId = array.from("v3-lun-09-03", "v3-mar-10-03", "v3-mie-11-03", "v3-jue-12-03", "v3-vie-13-03", "v3-lun-16-03", "v3-mar-17-03", "v3-mie-18-03", "v3-ultimo", "v5-eurusd-jue-18", "v150k-mie-09-09", "v150k-vie-11-09-antes", "v150k-vie-11-09-ipc", "vunica-vie-07-08", "vsimple-mar-09-09", "vsimple-jue-18-09-londres", "vestr26-lun-17-11", "vestr26-vie-02-01", "vcurso-vie-16-01", "vbacktest-jue-01-05-compra", "vbacktest-jue-01-05-venta", "vbacktest-vie-02-05", "vbacktest-lun-05-05", "vbacktest-mar-06-05-venta", "vbacktest-mar-06-05-compra", "vbacktest-mie-07-05", "vbacktest-jue-08-05", "vbacktest-vie-09-05-compra", "vbacktest-vie-09-05-venta", "vfondeo-mie-01-10", "vfondeo-mie-08-10-londres", "vfondeo-mie-08-10")
+var casoMercado = array.from("nasdaq", "nasdaq", "nasdaq", "nasdaq", "nasdaq", "nasdaq", "nasdaq", "nasdaq", "nasdaq", "eurusd", "nasdaq", "nasdaq", "nasdaq", "nasdaq", "eurusd", "eurusd", "nasdaq", "eurusd", "eurusd", "eurusd", "eurusd", "eurusd", "eurusd", "eurusd", "eurusd", "eurusd", "eurusd", "eurusd", "eurusd", "gbpusd", "gbpusd", "gbpusd")
+var casoDesde = array.from(timestamp(NY, 2026, 3, 9, 9, 0), timestamp(NY, 2026, 3, 10, 8, 0), timestamp(NY, 2026, 3, 11, 9, 0), timestamp(NY, 2026, 3, 12, 9, 0), timestamp(NY, 2026, 3, 13, 9, 0), timestamp(NY, 2026, 3, 16, 9, 0), timestamp(NY, 2026, 3, 17, 1, 0), timestamp(NY, 2026, 3, 18, 1, 0), timestamp(NY, 2026, 3, 19, 9, 0), timestamp(NY, 2025, 9, 18, 1, 0), timestamp(NY, 2026, 9, 9, 1, 0), timestamp(NY, 2026, 9, 11, 1, 0), timestamp(NY, 2026, 9, 11, 8, 30), timestamp(NY, 2026, 8, 7, 9, 0), timestamp(NY, 2025, 9, 9, 1, 0), timestamp(NY, 2025, 9, 18, 1, 0), timestamp(NY, 2025, 11, 17, 1, 0), timestamp(NY, 2026, 1, 2, 1, 0), timestamp(NY, 2026, 1, 16, 1, 0), timestamp(NY, 2025, 5, 1, 1, 0), timestamp(NY, 2025, 5, 1, 5, 0), timestamp(NY, 2025, 5, 2, 1, 0), timestamp(NY, 2025, 5, 5, 1, 0), timestamp(NY, 2025, 5, 6, 1, 0), timestamp(NY, 2025, 5, 6, 5, 0), timestamp(NY, 2025, 5, 7, 2, 30), timestamp(NY, 2025, 5, 8, 5, 0), timestamp(NY, 2025, 5, 9, 1, 0), timestamp(NY, 2025, 5, 9, 5, 0), timestamp(NY, 2025, 10, 1, 1, 0), timestamp(NY, 2025, 10, 8, 1, 0), timestamp(NY, 2025, 10, 8, 1, 0))
+var casoHasta = array.from(timestamp(NY, 2026, 3, 9, 13, 0), timestamp(NY, 2026, 3, 10, 13, 0), timestamp(NY, 2026, 3, 11, 13, 0), timestamp(NY, 2026, 3, 12, 13, 0), timestamp(NY, 2026, 3, 13, 13, 0), timestamp(NY, 2026, 3, 16, 13, 0), timestamp(NY, 2026, 3, 17, 13, 0), timestamp(NY, 2026, 3, 18, 13, 0), timestamp(NY, 2026, 3, 20, 13, 0), timestamp(NY, 2025, 9, 18, 13, 0), timestamp(NY, 2026, 9, 9, 13, 0), timestamp(NY, 2026, 9, 11, 8, 30), timestamp(NY, 2026, 9, 11, 11, 0), timestamp(NY, 2026, 8, 7, 13, 0), timestamp(NY, 2025, 9, 9, 9, 30), timestamp(NY, 2025, 9, 18, 5, 0), timestamp(NY, 2025, 11, 17, 13, 0), timestamp(NY, 2026, 1, 2, 13, 0), timestamp(NY, 2026, 1, 16, 9, 30), timestamp(NY, 2025, 5, 1, 5, 0), timestamp(NY, 2025, 5, 1, 13, 0), timestamp(NY, 2025, 5, 2, 9, 0), timestamp(NY, 2025, 5, 5, 13, 0), timestamp(NY, 2025, 5, 6, 5, 0), timestamp(NY, 2025, 5, 6, 9, 0), timestamp(NY, 2025, 5, 7, 13, 0), timestamp(NY, 2025, 5, 8, 9, 0), timestamp(NY, 2025, 5, 9, 5, 0), timestamp(NY, 2025, 5, 9, 9, 0), timestamp(NY, 2025, 10, 1, 13, 0), timestamp(NY, 2025, 10, 8, 9, 30), timestamp(NY, 2025, 10, 8, 13, 0))
+var casoEsperado = array.from("compra", "compra", "compra", "venta", "venta", "venta", "nada", "no compra", "compra", "venta", "compra", "no compra", "compra", "compra", "venta", "no venta", "venta", "no compra", "venta", "compra", "venta", "venta", "venta", "venta", "compra", "nada", "venta", "compra", "venta", "venta", "no venta", "compra")
+var casoTexto = array.from("Tercer vídeo (semana del lunes 9 de marzo): Rango de 4H ya formado: la vela de las 9 sube directa.", "Tercer vídeo: Rango de 4H formado y rango de 1H a las 8:00: entrada con el order block de M15 sin esperar a la apertura.", "Tercer vídeo: La vela de las 9 hace el barrido alcista: compras otra vez.", "Tercer vídeo: Rango de 4H ya formado: «otro caso de ventas».", "Tercer vídeo: Sin rango de 4H previo: la vela de las 9 toma el máximo de la anterior y reacciona hacia abajo.", "Tercer vídeo (semana del 16 de marzo): La vela de las 9 barre y crea el rango bajista; después hace otra manipulación y podía acabar en stop.", "Tercer vídeo: Sin rango diario claro: toma el máximo pero no reacciona. El autor no habría operado.", "Tercer vídeo: Rango alcista de 4H pero barrido bajista en el diario: el de 4H falla. No había que comprar.", "Tercer vídeo: Completa el rango bajista diario; barrido alcista y rango de 4H con la vela de las 9: compra en la apertura. El vídeo no dice si es el jueves 19 o el viernes 20.", "Quinto vídeo y vídeo «Esta simple estrategia de trading me hizo rentable» (jueves 18-9-2025: el FOMC fue el 17): Rango diario bajista; en 4H toma el máximo de la vela anterior y cierra dentro; rango de 1H y order block de M15: venta hacia el objetivo diario. La vela de 4H de la 1 va en contra (barrido alcista) y no se vende ahí: la venta llega en la vela de las 5 y cae con la apertura de las 9:30.", "Vídeo de los 150.000 $ (fecha deducida: el IPC del viernes 11-9-2026; por confirmar): El diario toma el mínimo (rango alcista) con el máximo semanal de objetivo; rangos alcistas de 4H, 3H y 1H y order block de M15: compra con el stop debajo del mínimo. Salió en el objetivo y con la «salida por tiempo»: un máximo nuevo de 1H es zona de peligro porque puede formar un rango al revés, y lo formó.", "Vídeo de los 150.000 $ (fecha por confirmar): Antes del IPC el 4H está tomando máximos y forma rangos en contra, y el 1H tiene un rango en contra claro: aunque el objetivo esté arriba, todavía no se puede comprar.", "Vídeo de los 150.000 $ (fecha por confirmar): El IPC baja a completar los rangos bajistas de 4H y de 1H y reacciona: compra con el TP en el rango de 4H, a 1 a 1. No puso la compra antes: esperó a que el precio le diera la razón.", "Vídeo de «la única vela» (viernes 7 de agosto, día del NFP; el año sale del día de la semana): Rango diario alcista (cierra un poco por fuera por el hueco del gráfico de futuros y el autor lo da por bueno a favor de la tendencia); la vela de 4H de la apertura barre el mínimo de la anterior y forma un rango alcista; rango de 1H; order block de M15. Stop debajo del barrido. Salió en el objetivo de …", "Vídeo «Esta simple estrategia de trading me hizo rentable» (el año, 2025, deducido): La vela diaria toma el máximo de ayer (power of 3). En 4H, acumulación de 17 a 21, manipulación en la vela de las 21 y otro barrido en la de la 1; no vende en ese segundo barrido porque no hay order block. Vende con el order block de M15 en la vela de la 1. Objetivo: al menos el mínimo de 4H.", "Vídeo «Esta simple estrategia de trading me hizo rentable»: La vela de 4H de la 1 forma un barrido alcista, en contra de la venta: todavía no se vende. La venta llega en la vela de las 5 (caso v5-eurusd-jue-18).", "Vídeo «La única estrategia de trading que necesitas para 2026» (el año, 2025, deducido): El diario toma el máximo del día anterior (rango bajista formándose); rango bajista de 4H y de 1H y order block de M15: venta con el stop encima del barrido y TP en el mínimo del rango de 4H. El mínimo diario llegó días después. Aunque el rango de 1H se complete sin ti, se entra si quedan los objetivos de 4H …", "Vídeo «La única estrategia de trading que necesitas para 2026»: Semanal bajista y el diario toma el máximo del anterior; rango bajista de 4H formado en Asia. Se buscan ventas («nunca vender tras tomar bajos»): la entrada ideal fue en Asia y el autor buscaría otra en Londres.", "Vídeo «Cómo hacer trading desde 0» (prueba con el pasado del autor; el par, deducido: euro): La vela de 4H de la 1 toma el máximo; en 1H había un rango alcista en contra y espera. Cuando el 1H forma el rango bajista y sale el order block de M15, vende. Funcionó, aunque él avisa de que es mirando el pasado.", "Vídeo del backtest «+80 %» (semana del 1 al 9 de mayo de 2025 y par EUR/USD deducidos; modelo sin sesgo ni diario): La vela de 4H de Londres barre el mínimo y reacciona. En 1H, primero un rango bajista en contra y espera; cuando se completa y reacciona fuerte, compra. TP en el objetivo de 4H (3,5 R con la salida por tiempo).", "Vídeo del backtest «+80 %» (semana del 1 al 9 de mayo de 2025 y par EUR/USD deducidos; modelo sin sesgo ni diario): Completado el objetivo de la compra, una vela de 4H nueva toma el máximo y reacciona (rango bajista de 4H, también en 1H) y hay order block de M15: venta hasta el mínimo de 4H. Hubo una noticia en medio y aguantó.", "Vídeo del backtest «+80 %» (semana del 1 al 9 de mayo de 2025 y par EUR/USD deducidos; modelo sin sesgo ni diario): Día del NFP. La primera venta, en Londres y adelantándose al cierre de 4H, acaba en stop: en 1H el precio tomó el mínimo de la vela anterior y volvió a subir. Vuelve a vender al volver dentro del rango de 4H (TP a 2 R) y otra vez en la vela de las 5 (TP): tres operaciones ese día.", "Vídeo del backtest «+80 %» (semana del 1 al 9 de mayo de 2025 y par EUR/USD deducidos; modelo sin sesgo ni diario): Tres ventas en tres velas de 4H seguidas: TP, stop y TP. Las dos últimas parecían idénticas; la diferencia, según él, estaría en otro par o en otro marco.", "Vídeo del backtest «+80 %» (semana del 1 al 9 de mayo de 2025 y par EUR/USD deducidos; modelo sin sesgo ni diario): Barrido del máximo en la vela de Londres y en 1H; entra a mercado en la reacción porque el precio se escapaba: TP a 2 R. Antes, en Asia, se completó otro rango que no cuenta.", "Vídeo del backtest «+80 %» (semana del 1 al 9 de mayo de 2025 y par EUR/USD deducidos; modelo sin sesgo ni diario): La vela de 4H de las 5 toma el mínimo y reacciona; order block de M15: compra hasta el máximo, TP a 2 R. A las 9 no hay reacción para vender.", "Vídeo del backtest «+80 %» (semana del 1 al 9 de mayo de 2025 y par EUR/USD deducidos; modelo sin sesgo ni diario): Día de la Fed. La vela de 4H de Londres es interna y el mercado consolida: «yo aquí no habría entrado». Hubo una compra de libro en 1H antes de su horario (2:30), que no cuenta.", "Vídeo del backtest «+80 %» (semana del 1 al 9 de mayo de 2025 y par EUR/USD deducidos; modelo sin sesgo ni diario): El barrido bajista de 4H fue en Asia y en Londres no hace falta otro máximo. Tras velas internas, una vela toma el máximo de la anterior y reacciona fuerte en M15: venta hasta el mínimo de 4H, TP.", "Vídeo del backtest «+80 %» (semana del 1 al 9 de mayo de 2025 y par EUR/USD deducidos; modelo sin sesgo ni diario): Rangos alcistas de 4H y de 1H ya hechos: espera un pequeño retroceso y compra; TP a 2 R. La salida por tiempo habría sido el máximo nuevo de la vela de las 5.", "Vídeo del backtest «+80 %» (semana del 1 al 9 de mayo de 2025 y par EUR/USD deducidos; modelo sin sesgo ni diario): Rangos bajistas de 1H y de 4H y order block: venta «un poco arriesgada». Sale en break even antes de que abra la vela de las 9, que hace el máximo nuevo.", "Vídeo «La mejor estrategia de trading para pasar pruebas de fondeo» (el par, GBP/USD, deducido; la hora no la dice): La vela de 4H toma el máximo de la anterior (objetivo: su mínimo) y la de 1H también. Él vendió en la reacción, sin esperar el order block, «por miedo a que se escapara»: lo correcto era esperar el order block y, si salía muy abajo, otro barrido de M15 («nunca entréis persiguiendo …", "Vídeo «La mejor estrategia de trading para pasar pruebas de fondeo»: Pensaba vender hacia el objetivo de abajo, pero se había tomado de noche: «cuando me he levantado ya no nos podíamos vender hacia ahí». Un objetivo ya tomado no empuja: no se vende (la compra del mismo día es vfondeo-mie-08-10).", "Vídeo «La mejor estrategia de trading para pasar pruebas de fondeo» (la hora no la dice): Viene de tomar el mínimo del día anterior y reaccionar («posible alcista»); rango alcista de 4H, barrido de 1H y order block de M15, stop debajo del barrido. Sale en el objetivo de 4H, con una salida por tiempo en 1H («llegar a un objetivo más salida basada en tiempo, yo me salgo»). Como el objetivo estaba c…")
+var casoCompra = array.new_bool(array.size(casoId), false)
+var casoVenta = array.new_bool(array.size(casoId), false)
+var casoMin = array.new_float(array.size(casoId), na)
+var casoMax = array.new_float(array.size(casoId), na)
+
+// ───────────────────────── Entradas y salidas (crt/motor.py) ─────────────────────────
+
+f_usada(int id) =>
+    id != 0 and array.includes(usados, id)
+
+// Entrada, stop, riesgo y TP, o el motivo por el que no se pueden poner.
+f_niveles(int d, float precio, Setup s) =>
+    bool ok = true
+    string motivo = ""
+    float entrada = na
+    float stop = na
+    float riesgo = na
+    float tp = na
+    if d > 0
+        if precio <= s.barrido
+            ok := false
+            motivo := "el precio ya pasó el barrido"
+        else
+            entrada := precio + dif
+            stop := s.barrido - col
+            riesgo := entrada - stop
+    else
+        if precio >= s.barrido
+            ok := false
+            motivo := "el precio ya pasó el barrido"
+        else
+            entrada := precio
+            stop := s.barrido + col + dif
+            riesgo := stop - entrada
+    if ok and (riesgo <= 0 or riesgo < 3 * dif)
+        ok := false
+        motivo := "stop demasiado corto"
+    if ok
+        tp := entrada + d * ratio * riesgo
+    [ok, motivo, entrada, stop, riesgo, tp]
+
+f_cabe(int d, float tp, float objetivo) =>
+    na(objetivo) ? true : d > 0 ? tp <= objetivo : tp >= objetivo + dif
+
+// Lo que el autor no quiere ver al entrar. No impiden entrar: dan la nota (A sin banderas, B una, C dos o más).
+f_banderas(int d, int mc, float precio, string c3, string c1, bool nOk, float riesgo) =>
+    array<string> bs = array.new_string()
+    if f_semaforo(d1.ultimo, d) == "rojo"
+        array.push(bs, "el diario va en contra")
+    if d1.tomando(d)
+        array.push(bs, d > 0 ? "el diario está tomando máximos" : "el diario está tomando mínimos")
+    if h4.tomando(d)
+        array.push(bs, d > 0 ? "el 4H está tomando máximos" : "el 4H está tomando mínimos")
+    if h1.tomando(d)
+        array.push(bs, d > 0 ? "el 1H está tomando máximos" : "el 1H está tomando mínimos")
+    if c3 == "rojo"
+        array.push(bs, "el 3H va en contra")
+    if c1 == "rojo"
+        array.push(bs, "el 1H va en contra")
+    if not na(d1.parcial)
+        if (precio - d1.parcial.o) * d > 0
+            array.push(bs, d > 0 ? "compra por encima de la apertura del día" : "venta por debajo de la apertura del día")
+    if mc > 540 and mc <= 570
+        array.push(bs, "justo antes de la apertura")
+    float medio = h4.rangoMedio()
+    if nOk and not na(medio)
+        if riesgo > medio
+            array.push(bs, "entrada lejos del barrido")
+    bs
+
+f_texto(float x) =>
+    str.tostring(x, format.mintick)
+
+f_abrir(Estado e, int d, float entrada, float stop, float riesgo, float tp, string nota, string detalle, int dia, int tc) =>
+    color cE = color.new(color.gray, 0)
+    line lE = line.new(bar_index, entrada, bar_index + 1, entrada, color=cE, width=1)
+    line lS = line.new(bar_index, stop, bar_index + 1, stop, color=color.new(color.red, 0), width=1)
+    line lT = line.new(bar_index, tp, bar_index + 1, tp, color=color.new(color.green, 0), width=1)
+    e.op := Op.new(d, entrada, stop, tp, riesgo, lE, lS, lT)
+    e.senal := d
+    map.put(opsDia, dia, nz(map.get(opsDia, dia)) + 1)
+    label.new(bar_index, d > 0 ? low : high, (d > 0 ? "COMPRA" : "VENTA") + "\nNota " + nota, style=d > 0 ? label.style_label_up : label.style_label_down, color=d > 0 ? color.new(color.green, 0) : color.new(color.red, 0), textcolor=color.white, size=size.small, tooltip=detalle)
+    e.aviso := "BOT CRT · " + (d > 0 ? "COMPRA " : "VENTA ") + nombreMercado + " · Entrada " + f_texto(entrada) + " · Stop " + f_texto(stop) + " · TP " + f_texto(tp) + " · 1 a " + str.tostring(ratio) + " · Nota " + nota
+    for i = 0 to math.max(array.size(casoId) - 1, 0)
+        if array.size(casoId) > 0 and array.get(casoMercado, i) == mercado and tc >= array.get(casoDesde, i) and tc <= array.get(casoHasta, i)
+            if d > 0
+                array.set(casoCompra, i, true)
+            else
+                array.set(casoVenta, i, true)
+    true
+
+f_salir(Estado e, float precio, string res, int dia) =>
+    Op o = e.op
+    float r = (precio - o.entrada) / o.riesgo * o.dir
+    e.n += 1
+    e.ganadas += r > 0 ? 1 : 0
+    e.total += r
+    e.acum += r
+    e.pico := math.max(e.pico, e.acum)
+    e.peorCaida := math.max(e.peorCaida, e.pico - e.acum)
+    e.racha := r < 0 ? e.racha + 1 : 0
+    e.peorRacha := math.max(e.peorRacha, e.racha)
+    map.put(rDia, dia, nz(map.get(rDia, dia)) + r)
+    line.set_x2(o.lE, bar_index)
+    line.set_x2(o.lS, bar_index)
+    line.set_x2(o.lT, bar_index)
+    label.new(bar_index, precio, res + " " + str.tostring(r, "+0.0;-0.0") + " R", style=label.style_label_left, color=r > 0 ? color.new(color.green, 70) : color.new(color.red, 70), textcolor=color.white, size=size.tiny)
+    e.op := na
+    r
+
+// Al cierre de una barra de M15, para compras (d = 1) o para ventas (d = -1): si hay order block con el 4H a
+// favor, se comprueba todo lo demás y se decide. Devuelve la decisión (vacía si no había nada que mirar).
+f_mirar(Estado e, Vela b, Vela a, int d, int dia, int kW, int mc, int tc) =>
+    string decision = ""
+    bool horario = desdeM < mc and mc <= hastaM and not (espera > 0 and mc > 570 and mc < 570 + espera)
+    float cA = math.abs(a.c - a.o)
+    float cB = math.abs(b.c - b.o)
+    // Order block (decidido el 19-10-2026): la vela a favor es más fuerte que la anterior en contra y cierra más
+    // allá de donde abrió esta.
+    bool ob = cB > cA and (d > 0 ? (a.c < a.o and b.c > b.o and b.c > a.o) : (a.c > a.o and b.c < b.o and b.c < a.o))
+    if horario and ob
+        float precio = b.c
+        Setup s = f_setup4h(d, precio)
+        if not na(s)
+            if s.via == "cierre" and (f_usada(s.idea1) or f_usada(s.idea2))
+                // La idea de 4H ya dio su entrada: si la vela en curso forma otro rango a favor, es una idea nueva.
+                s := f_anticipo4h(d, precio)
+        if not na(s)
+            if b.iFin > s.iInicio and not (f_usada(s.idea1) or f_usada(s.idea2))
+                Setup sd = f_setupD1(d, precio)
+                string colorD = na(sd) ? f_semaforo(d1.ultimo, d) : "verde"
+                float objetivo = na
+                if not na(sd) and not modeloBacktest
+                    objetivo := sd.objetivo
+                bool diarioVale = modeloBacktest or not na(sd)
+                [nOk, motivoN, entrada, stop, riesgo, tp] = f_niveles(d, precio, s)
+                string c3 = f_colorSimple(h3, d)
+                string c1 = f_colorSimple(h1, d)
+                array<string> bs = f_banderas(d, mc, precio, c3, c1, nOk, riesgo)
+                string nota = array.size(bs) == 0 ? "A" : array.size(bs) == 1 ? "B" : "C"
+                int sesgo = f_sesgo(kW)
+                if not modeloBacktest and sesgo != d
+                    decision := "sin sesgo a favor"
+                else if not diarioVale
+                    decision := "el diario no está a favor"
+                else if not na(e.op)
+                    decision := "ya había una operación abierta"
+                else
+                    array.push(usados, s.idea1)
+                    if s.idea2 != 0
+                        array.push(usados, s.idea2)
+                    if topeR > 0 and nz(map.get(rDia, dia)) <= -topeR
+                        decision := "tope de pérdida del día"
+                    else if nz(map.get(opsDia, dia)) >= maxOps
+                        decision := "tope de operaciones del día"
+                    else if not nOk
+                        decision := motivoN
+                    else if comprobarObjDiario and not f_cabe(d, tp, objetivo)
+                        decision := "el TP no cabe antes del objetivo del diario"
+                    else
+                        decision := "entrada"
+                bool nueva = not (array.includes(vistos, s.idea1) or (s.idea2 != 0 and array.includes(vistos, s.idea2)))
+                array.push(vistos, s.idea1)
+                if s.idea2 != 0
+                    array.push(vistos, s.idea2)
+                string detalle = (d > 0 ? "Compra" : "Venta") + " al cierre de la vela de M15 de las " + str.format_time(tc, "HH:mm", NY) + " (Nueva York) · " + (mc <= 570 ? "Londres" : "tras la apertura")
+                detalle += "\nRango de 4H " + (s.via == "cierre" ? "cerrado" : "anticipado") + " · escenario " + s.escenario + " · diario " + colorD + " · sesgo de " + f_textoDir(sesgo)
+                detalle += "\nNota " + nota + (array.size(bs) > 0 ? ": " + array.join(bs, ", ") : ": sin banderas rojas")
+                if nOk
+                    detalle += "\nEntrada " + f_texto(entrada) + " · Stop " + f_texto(stop) + " · TP " + f_texto(tp)
+                if decision == "entrada"
+                    f_abrir(e, d, entrada, stop, riesgo, tp, nota, detalle, dia, tc)
+                else if nueva and verDescartadas
+                    label.new(bar_index, d > 0 ? low : high, d > 0 ? "▲" : "▼", style=label.style_none, textcolor=color.new(color.gray, 20), size=size.small, tooltip=(d > 0 ? "No compró: " : "No vendió: ") + decision + "\n" + detalle)
+    decision
+
+// ───────────────────────── Cada barra de 15 minutos ─────────────────────────
+
+var int wIprev = -1
+var int wEprev = -9
+var int mIprev = -1
+var int mEprev = -9
+
+if barstate.isconfirmed and esM15 and desdeM >= 0 and hastaM >= 0
+    [dia, wd, k1, k3, k4, kW] = f_claves(time)
+    // Las barras de un día de trading de sábado o domingo no cuentan: formarían velas falsas.
+    if wd < 5
+        est.senal := 0
+        est.cierreSemanal := false
+        if est.primera == 0
+            est.primera := time
+        Vela b = Vela.new(time, open, high, low, close, bar_index, bar_index)
+        // El semanal y el mensual cerrados, de TradingView (solo cambian al cerrar su vela).
+        if wI != wIprev or wE != wEprev
+            wU := na
+            if wE >= 0
+                wU := Evento.new(wI, wR, wD, 0, 0, wO, wB, "otro", na, wE)
+            wIprev := wI
+            wEprev := wE
+        if mI != mIprev or mE != mEprev
+            mU := na
+            if mE >= 0
+                mU := Evento.new(mI, mR, mD, 0, 0, mO, mB, "otro", na, mE)
+            mIprev := mI
+            mEprev := mE
+        // 1. Si empieza otra semana sin que la anterior cerrara (hueco), se cierra lo abierto donde se quedó.
+        if est.kWPrev != 0 and kW != est.kWPrev and not na(est.op)
+            f_salir(est, est.op.dir > 0 ? est.cierrePrev : est.cierrePrev + dif, "Cierre semanal", est.diaPrev)
+            est.cierreSemanal := true
+        if not na(h1.parcial) and k1 != h1.clave
+            h1.cerrar()
+        if not na(h3.parcial) and k3 != h3.clave
+            h3.cerrar()
+        if not na(h4.parcial) and k4 != h4.clave
+            h4.cerrar()
+        if not na(d1.parcial) and dia != d1.clave
+            d1.cerrar()
+        // 2. ¿Algún rango llega a su objetivo? Y la barra se suma a las velas en curso.
+        f_completar(h1.ultimo, b)
+        f_completar(h3.ultimo, b)
+        f_completar(h4.ultimo, b)
+        f_completar(d1.ultimo, b)
+        f_completar(wU, b)
+        f_completar(mU, b)
+        h1.sumar(b, k1)
+        h3.sumar(b, k3)
+        h4.sumar(b, k4)
+        d1.sumar(b, dia)
+        // 3. La operación abierta: ¿toca el stop o el TP? Si toca los dos en la misma barra, cuenta el stop.
+        if not na(est.op)
+            Op o = est.op
+            float ap = o.dir > 0 ? open : open + dif
+            float mx = o.dir > 0 ? high : high + dif
+            float mn = o.dir > 0 ? low : low + dif
+            if (o.dir > 0 and mn <= o.stop) or (o.dir < 0 and mx >= o.stop)
+                f_salir(est, o.dir > 0 ? math.min(o.stop, ap) : math.max(o.stop, ap), "SL", dia)
+            else if (o.dir > 0 and mx >= o.tp) or (o.dir < 0 and mn <= o.tp)
+                f_salir(est, o.tp, "TP", dia)
+            else
+                line.set_x2(o.lE, bar_index)
+                line.set_x2(o.lS, bar_index)
+                line.set_x2(o.lT, bar_index)
+        // 4. Se cierran las velas que terminan con esta barra. El viernes a las 17:00 se cierra lo abierto.
+        [diaS, wdS, k1S, k3S, k4S, kWS] = f_claves(time + 900000)
+        bool finSemana = kWS != kW or wdS >= 5
+        if k1S != h1.clave
+            h1.cerrar()
+        if k3S != h3.clave
+            h3.cerrar()
+        if k4S != h4.clave
+            h4.cerrar()
+        if diaS != d1.clave
+            d1.cerrar()
+        if finSemana and not na(est.op)
+            f_salir(est, est.op.dir > 0 ? close : close + dif, "Cierre semanal", dia)
+            est.cierreSemanal := true
+        // 5. Al cierre de la barra, para compras y para ventas.
+        int tc = time + 900000
+        int mc = hour(tc, NY) * 60 + minute(tc, NY)
+        if not na(est.anterior) and not finSemana
+            f_mirar(est, b, est.anterior, 1, dia, kW, mc, tc)
+            f_mirar(est, b, est.anterior, -1, dia, kW, mc, tc)
+        // Hasta dónde llega el precio en la franja de cada caso del examen (para dibujarlo).
+        for i = 0 to array.size(casoId) - 1
+            if array.get(casoMercado, i) == mercado and time >= array.get(casoDesde, i) and tc <= array.get(casoHasta, i)
+                array.set(casoMin, i, na(array.get(casoMin, i)) ? low : math.min(array.get(casoMin, i), low))
+                array.set(casoMax, i, na(array.get(casoMax, i)) ? high : math.max(array.get(casoMax, i), high))
+        est.anterior := b
+        est.kWPrev := kW
+        est.diaPrev := dia
+        est.cierrePrev := close
+        est.ultimaCierre := tc
+
+senalCompra = est.senal > 0 and est.ultimaCierre == time + 900000
+senalVenta = est.senal < 0 and est.ultimaCierre == time + 900000
+
+// La prueba con el pasado de TradingView: las mismas entradas, con el stop y el TP en el bróker simulado.
+if (senalCompra or senalVenta) and not na(est.op)
+    float q = strategy.equity * riesgoPct / 100 / (est.op.riesgo * syminfo.pointvalue)
+    if senalCompra
+        strategy.entry("Compra", strategy.long, qty=q)
+        strategy.exit("Salida compra", "Compra", stop=est.op.stop, limit=est.op.tp)
+    else
+        strategy.entry("Venta", strategy.short, qty=q)
+        strategy.exit("Salida venta", "Venta", stop=est.op.stop, limit=est.op.tp)
+if est.cierreSemanal and est.ultimaCierre == time + 900000
+    strategy.close_all(comment="Cierre semanal")
+
+// ───────────────────────── Dibujos de ahora: niveles, panel y casos ─────────────────────────
+
+var line lObj4 = na
+var line lBarr4 = na
+var line lObjD = na
+var label tObj4 = na
+var label tObjD = na
+if barstate.islast and verNiveles and esM15
+    line.delete(lObj4)
+    line.delete(lBarr4)
+    line.delete(lObjD)
+    label.delete(tObj4)
+    label.delete(tObjD)
+    Evento u4 = h4.ultimo
+    if not na(u4)
+        if u4.rango and u4.estado == 0
+            color c4 = u4.dir > 0 ? color.green : color.red
+            lObj4 := line.new(bar_index - 30, u4.objetivo, bar_index + 10, u4.objetivo, color=color.new(c4, 0), style=line.style_dashed, width=1)
+            lBarr4 := line.new(bar_index - 30, u4.barrido, bar_index + 10, u4.barrido, color=color.new(c4, 60), style=line.style_dotted, width=1)
+            tObj4 := label.new(bar_index + 10, u4.objetivo, "Objetivo del rango de 4H (" + (u4.dir > 0 ? "alcista" : "bajista") + ")", style=label.style_label_left, color=color.new(c4, 80), textcolor=color.white, size=size.tiny)
+    Evento ud = d1.ultimo
+    if not na(ud)
+        if ud.rango and ud.estado == 0
+            color cd = ud.dir > 0 ? color.teal : color.maroon
+            lObjD := line.new(bar_index - 60, ud.objetivo, bar_index + 10, ud.objetivo, color=color.new(cd, 0), style=line.style_dashed, width=2)
+            tObjD := label.new(bar_index + 10, ud.objetivo, "Objetivo del diario (" + (ud.dir > 0 ? "alcista" : "bajista") + ")", style=label.style_label_left, color=color.new(cd, 70), textcolor=color.white, size=size.tiny)
+
+f_celdaColor(string c) =>
+    c == "verde" ? color.new(color.green, 20) : c == "rojo" ? color.new(color.red, 20) : color.new(color.orange, 20)
+
+var table panel = table.new(position.top_right, 2, 13, bgcolor=color.new(color.black, 15), border_color=color.new(color.gray, 60), border_width=1)
+var bool casosDibujados = false
+if barstate.islast and verPanel
+    table.clear(panel, 0, 0, 1, 12)
+    if not esM15
+        table.cell(panel, 0, 0, "CRT: poned el gráfico en 15 minutos (M15). Con otro marco no calcula nada.", text_color=color.white, bgcolor=color.new(color.red, 20))
+    else
+        int sesgoAhora = f_sesgo(f_semanaDe(time))
+        color blanco = color.white
+        table.cell(panel, 0, 0, "BOT CRT · " + nombreMercado, text_color=blanco, text_halign=text.align_left)
+        table.cell(panel, 1, 0, "solo indicador: decidís vosotros", text_color=color.new(color.gray, 0), text_halign=text.align_left)
+        table.cell(panel, 0, 1, "Sesgo de fondo", text_color=blanco, text_halign=text.align_left)
+        table.cell(panel, 1, 1, (sesgoAhora == 0 ? "sin sesgo (no entra)" : sesgoAhora > 0 ? "COMPRAS" : "VENTAS") + " · semanal: " + f_textoDir(f_direccion(wU)) + " · mensual: " + f_textoDir(f_direccion(mU)), text_color=blanco, text_halign=text.align_left)
+        string cDc = f_colorD1(1, close)
+        string cDv = f_colorD1(-1, close)
+        string c4c = f_color4h(1, close)
+        string c4v = f_color4h(-1, close)
+        table.cell(panel, 0, 2, "Diario", text_color=blanco, text_halign=text.align_left)
+        table.cell(panel, 1, 2, "compras " + cDc + " · ventas " + cDv, text_color=blanco, bgcolor=f_celdaColor(cDc == "verde" ? cDc : cDv), text_halign=text.align_left)
+        table.cell(panel, 0, 3, "4H", text_color=blanco, text_halign=text.align_left)
+        table.cell(panel, 1, 3, "compras " + c4c + " · ventas " + c4v, text_color=blanco, bgcolor=f_celdaColor(c4c == "verde" ? c4c : c4v), text_halign=text.align_left)
+        table.cell(panel, 0, 4, "3H · 1H", text_color=blanco, text_halign=text.align_left)
+        table.cell(panel, 1, 4, "3H: compras " + f_colorSimple(h3, 1) + " · ventas " + f_colorSimple(h3, -1) + " | 1H: compras " + f_colorSimple(h1, 1) + " · ventas " + f_colorSimple(h1, -1), text_color=blanco, text_halign=text.align_left)
+        int tcNow = time + 900000
+        int mcNow = hour(tcNow, NY) * 60 + minute(tcNow, NY)
+        bool horarioNow = desdeM < mcNow and mcNow <= hastaM and not (espera > 0 and mcNow > 570 and mcNow < 570 + espera)
+        table.cell(panel, 0, 5, "Ahora", text_color=blanco, text_halign=text.align_left)
+        table.cell(panel, 1, 5, (horarioNow ? "horario de entradas" : "fuera de horario") + " (" + str.format_time(tcNow, "HH:mm", NY) + " en Nueva York)", text_color=blanco, text_halign=text.align_left)
+        [diaN, wdN, k1N, k3N, k4N, kWN] = f_claves(time)
+        table.cell(panel, 0, 6, "Hoy", text_color=blanco, text_halign=text.align_left)
+        table.cell(panel, 1, 6, str.tostring(nz(map.get(rDia, diaN)), "+0.0;-0.0") + " R · operaciones " + str.tostring(nz(map.get(opsDia, diaN))) + " de " + str.tostring(maxOps) + (topeR > 0 ? " · tope −" + str.tostring(topeR) + " R" : ""), text_color=blanco, text_halign=text.align_left)
+        table.cell(panel, 0, 7, "Racha", text_color=blanco, text_halign=text.align_left)
+        table.cell(panel, 1, 7, str.tostring(est.racha) + " stops seguidos" + (est.racha >= 3 ? " · consejo del vídeo de psicología: tras una racha así, parad un día" : ""), text_color=blanco, text_halign=text.align_left)
+        string txtOp = "ninguna"
+        if not na(est.op)
+            txtOp := (est.op.dir > 0 ? "COMPRA" : "VENTA") + " · entrada " + f_texto(est.op.entrada) + " · stop " + f_texto(est.op.stop) + " · TP " + f_texto(est.op.tp)
+        table.cell(panel, 0, 8, "Operación", text_color=blanco, text_halign=text.align_left)
+        table.cell(panel, 1, 8, txtOp, text_color=blanco, text_halign=text.align_left)
+        float media = est.n > 0 ? est.total / est.n : 0.0
+        table.cell(panel, 0, 9, "En este gráfico", text_color=blanco, text_halign=text.align_left)
+        table.cell(panel, 1, 9, "desde el " + str.format_time(est.primera, "dd-MM-yyyy", NY) + ": " + str.tostring(est.n) + " operaciones · acierto " + str.tostring(est.n > 0 ? 100.0 * est.ganadas / est.n : 0.0, "0") + " % · " + str.tostring(est.total, "+0.0;-0.0") + " R · media " + str.tostring(media, "+0.00;-0.00") + " R · peor caída −" + str.tostring(est.peorCaida, "0.0") + " R · peor racha " + str.tostring(est.peorRacha), text_color=blanco, bgcolor=est.total >= 0 ? color.new(color.green, 70) : color.new(color.red, 70), text_halign=text.align_left)
+        // Los casos del examen que caen en la historia cargada: bien, mal o sin datos.
+        int bien = 0
+        int mal = 0
+        int sinDatos = 0
+        for i = 0 to array.size(casoId) - 1
+            if array.get(casoMercado, i) == mercado
+                int ini = array.get(casoDesde, i)
+                int fin = array.get(casoHasta, i)
+                if ini < est.primera or fin > est.ultimaCierre
+                    sinDatos += 1
+                else
+                    bool cc = array.get(casoCompra, i)
+                    bool vv = array.get(casoVenta, i)
+                    string esp = array.get(casoEsperado, i)
+                    bool ok = esp == "compra" ? cc : esp == "venta" ? vv : esp == "nada" ? not (cc or vv) : esp == "no compra" ? not cc : not vv
+                    bien += ok ? 1 : 0
+                    mal += ok ? 0 : 1
+                    if verCasos and not casosDibujados
+                        float lo = nz(array.get(casoMin, i), close)
+                        float hi = nz(array.get(casoMax, i), close)
+                        color cc2 = ok ? color.green : color.red
+                        box.new(ini, hi, fin, lo, xloc=xloc.bar_time, border_color=color.new(cc2, 30), bgcolor=color.new(cc2, 88), border_style=line.style_dashed)
+                        label.new(ini, hi, array.get(casoId, i) + " · tenía que: " + esp + " · " + (ok ? "BIEN" : "MAL"), xloc=xloc.bar_time, style=label.style_label_down, color=color.new(cc2, 40), textcolor=color.white, size=size.tiny, tooltip=array.get(casoTexto, i) + "\nEl indicador: " + (cc ? "compró" : vv ? "vendió" : "no entró"))
+        casosDibujados := true
+        table.cell(panel, 0, 10, "Casos del examen", text_color=blanco, text_halign=text.align_left)
+        table.cell(panel, 1, 10, str.tostring(bien) + " bien de " + str.tostring(bien + mal) + (sinDatos > 0 ? " · " + str.tostring(sinDatos) + " fuera de la historia cargada" : ""), text_color=blanco, text_halign=text.align_left)
+        table.cell(panel, 0, 11, "Lo que se sabe", text_color=blanco, text_halign=text.align_left)
+        table.cell(panel, 1, 11, "En 20 años y 4 mercados (1.065 operaciones) perdió unos −0,10 R por operación. Úsalo para ver, no para fiarte a ciegas.", text_color=color.new(color.yellow, 0), text_halign=text.align_left)
+        if dif == 0 and col == 0
+            table.cell(panel, 0, 12, "Ojo", text_color=blanco, text_halign=text.align_left)
+            table.cell(panel, 1, 12, "Mercado sin costes del bot: poned el diferencial y el colchón en los ajustes.", text_color=color.new(color.orange, 0), text_halign=text.align_left)

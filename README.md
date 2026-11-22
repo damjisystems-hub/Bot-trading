@@ -9,6 +9,9 @@ Bot de trading con la estrategia CRT («Candle Range Theory») para el NASDAQ, e
   - el examen con situaciones reales.
 - **El bot en vivo para MT5** (`mt5/`): avisa al móvil, os frena con el tope de pérdida del día y, más adelante, opera
   en demo.
+- **El indicador para TradingView** (`tradingview/`, 22-11-2026): las mismas reglas pintadas en el gráfico, con el
+  panel, las banderas rojas, las señales descartadas y los casos del examen, y la versión para probar con el pasado.
+  Decide igual que el bot (lo comprueba `tests/test_tradingview.py`). Guía: `tradingview/LEEME.md`.
 - **El cuaderno del equipo** (`cuaderno/`): vuestras operaciones y cómo estabais, para la parte de psicología.
 
 **Estado (21-10-2026):**
@@ -144,4 +147,5 @@ python3 -m unittest
 | `crt/mercados.py` | Diferencial y colchón del stop de cada mercado (valores típicos, no medidos). |
 | `crt/informe.py` | El resumen de la prueba. |
 | `mt5/` | El bot en vivo para MT5 y su guía. |
+| `tradingview/` | El indicador y la estrategia para TradingView (salen de `plantilla.pine` con `generar.py`), su traducción a Python para las pruebas (`espejo.py`) y su guía. |
 | `tests/` | Pruebas automáticas con precios inventados. |

@@ -18,6 +18,9 @@ Guía común para cualquier IA que trabaje en este repositorio. `CLAUDE.md` solo
 - **La memoria del bot de MT5 (`mt5/`) tiene las mismas columnas, motivos, resultados y banderas rojas que
   `crt/memoria.py` y `crt/motor.py` (`DECISIONES`, `RESULTADOS` y `BANDERAS`):** si cambias uno, cambia el otro. Lo
   comprueba `tests/test_mt5.py`.
+- **El indicador de TradingView (`tradingview/`) decide igual que el bot:** si cambia una regla, cámbiala también en
+  `tradingview/plantilla.pine` y en `tradingview/espejo.py`, y vuelve a generar con `python3 tradingview/generar.py`.
+  Lo comprueba `tests/test_tradingview.py`.
 - **Psicología:** las operaciones que hace el equipo a mano van en `cuaderno/operaciones.csv` (informe con
   `python3 cuaderno.py`). Si el dueño cuenta una operación suya, apúntala allí con si siguió el plan y la emoción.
 - **Nada de dinero real** ni de órdenes en cuentas reales sin permiso explícito del dueño. El orden es demo, cuenta
